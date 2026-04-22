@@ -1,0 +1,54 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: SSH deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Pull and rebuild on VPS
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
+        run: |
+          ssh "$SSH_USER@$SSH_HOST" bash -s <<EOF
+            set -e
+            cd "$PROJECT_PATH"
+            echo "[deploy] pulling latest..."
+            git pull --ff-only
+            echo "[deploy] rebuilding app container..."
+            docker compose up -d --build app
+            echo "[deploy] pruning old images..."
+            docker image prune -f
+            echo "[deploy] done"
+          EOF
+
+      - name: Health check
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          echo "Waiting 10s for app to come up..."
+          sleep 10
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL" || echo "000")
+          if [ "$code" = "200" ] || [ "$code" = "307" ] || [ "$code" = "308" ]; then
+            echo "✓ App responded with $code"
+          else
+            echo "✗ App returned HTTP $code"
+            exit 1
+          fi

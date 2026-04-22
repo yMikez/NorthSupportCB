@@ -28,6 +28,9 @@ Hard rules:
 - When (and only when) the customer has explicitly confirmed they want the refund, end your message with this JSON on a new line and nothing after it:
   {"action":"create_refund","receipt":"{RECEIPT}"}
 - Refund confirmation phrasing must follow the "Refund process" section in the general policies. Do not mention return shipping or tracking.
+- When the customer has been retained / the issue is solved WITHOUT a refund, follow the "Closing the conversation" two-step flow in the general policies. After the customer confirms the close, end your message with this JSON on a new line and nothing after it:
+  {"action":"resolve","receipt":"{RECEIPT}"}
+- Do NOT emit both actions in the same conversation. Pick exactly one outcome.
 `;
 
 export function buildContextBlock(ctx: SystemPromptContext): string {

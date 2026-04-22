@@ -31,7 +31,7 @@ type ExistingTicket = {
   openedDate: string;
 };
 
-const ACTION_REGEX = /\{\s*"action"\s*:\s*"create_refund"[^}]*\}/;
+const ACTION_REGEX = /\{\s*"action"\s*:\s*"(?:create_refund|resolve)"[^}]*\}/;
 
 function formatMoney(amount: number, currency: string): string {
   try {
@@ -103,6 +103,8 @@ export default function CustomerPage() {
   const [refundAmount, setRefundAmount] = useState(0);
   const [currency, setCurrency] = useState("USD");
   const [vendor, setVendor] = useState<string>("");
+  const [customerName, setCustomerName] = useState<string>("");
+  const [productTitle, setProductTitle] = useState<string>("");
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -110,6 +112,9 @@ export default function CustomerPage() {
   const [streaming, setStreaming] = useState(false);
   const [submittingRefund, setSubmittingRefund] = useState(false);
   const [conversationId, setConversationId] = useState<string>("");
+  const [endReason, setEndReason] = useState<"refund" | "resolved" | null>(
+    null,
+  );
 
   const scrollerRef = useRef<HTMLDivElement>(null);
 
@@ -166,15 +171,21 @@ export default function CustomerPage() {
       setRefundAmount(refundData.refundAmount ?? 0);
       setCurrency(refundData.currency ?? "USD");
       setVendor(refundData.vendor ?? "");
+      const firstName: string = refundData.firstName ?? "";
+      setCustomerName(firstName);
+      setProductTitle(refundData.productTitle ?? "");
       setConversationId(
         typeof crypto !== "undefined" && "randomUUID" in crypto
           ? crypto.randomUUID()
           : `c-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       );
+      const greeting = firstName
+        ? `Hi ${firstName}, I'm ${AGENT_NAME} from support. How can I help you today?`
+        : `Hi, I'm ${AGENT_NAME} from support. How can I help you today?`;
       setMessages([
         {
           role: "assistant",
-          content: `Hi, I'm ${AGENT_NAME} — I'm so sorry you're having trouble with your order. I can see everything on my end. Could you tell me a little about what went wrong? I'll do my best to help.`,
+          content: greeting,
           timestamp: formatTime(new Date()),
         },
       ]);
@@ -200,12 +211,27 @@ export default function CustomerPage() {
         if (data.detail) setGlobalDetail(data.detail);
         return;
       }
+      setEndReason("refund");
       setPhase("submitted");
     } catch {
       setGlobalError("Network error while submitting refund.");
     } finally {
       setSubmittingRefund(false);
     }
+  }
+
+  async function triggerResolve(receiptForResolve: string) {
+    try {
+      await fetch("/api/resolve-conversation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ receipt: receiptForResolve }),
+      });
+    } catch {
+      /* non-blocking — UI still closes the conversation */
+    }
+    setEndReason("resolved");
+    setPhase("submitted");
   }
 
   async function sendMessage(e: FormEvent) {
@@ -287,8 +313,11 @@ export default function CustomerPage() {
             action?: string;
             receipt?: string;
           };
+          const r = parsed.receipt || receipt.trim();
           if (parsed.action === "create_refund") {
-            await triggerRefund(parsed.receipt || receipt.trim());
+            await triggerRefund(r);
+          } else if (parsed.action === "resolve") {
+            await triggerResolve(r);
           }
         } catch {
           /* ignore */
@@ -312,8 +341,11 @@ export default function CustomerPage() {
     setRefundAmount(0);
     setCurrency("USD");
     setVendor("");
+    setCustomerName("");
+    setProductTitle("");
     setMessages([]);
     setInput("");
+    setEndReason(null);
   }
 
   return (
@@ -474,31 +506,42 @@ export default function CustomerPage() {
               </div>
 
               <div className="px-5 pb-4 pt-4">
-                <div className="refund-pill flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-[0.1em] text-emerald-600">
-                      Your eligible refund
-                    </p>
-                    <p className="mt-1 font-serif text-3xl font-semibold text-emerald-900">
-                      {formatMoney(refundAmount, currency)}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs font-medium uppercase tracking-[0.1em] text-neutral-400">
-                      Receipt
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-neutral-700">
-                      {receipt}
-                    </p>
-                    {vendor && (
-                      <p className="mt-0.5 text-xs text-neutral-400">
-                        from{" "}
-                        <span className="font-medium text-neutral-500">
-                          {vendor}
-                        </span>
-                      </p>
+                <div className="rounded-xl border border-emerald-100 bg-[#f0fdf4] px-5 py-4">
+                  <p className="font-serif text-lg text-emerald-900">
+                    {customerName ? `Hi ${customerName}!` : "Hi there!"}
+                  </p>
+                  <p className="mt-0.5 text-xs text-emerald-700">
+                    We found your order. Here&rsquo;s a quick summary.
+                  </p>
+
+                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                    {productTitle && (
+                      <div className="col-span-2">
+                        <dt className="text-[10px] font-medium uppercase tracking-[0.08em] text-neutral-400">
+                          Product
+                        </dt>
+                        <dd className="mt-0.5 text-sm font-medium text-neutral-800">
+                          {productTitle}
+                        </dd>
+                      </div>
                     )}
-                  </div>
+                    <div>
+                      <dt className="text-[10px] font-medium uppercase tracking-[0.08em] text-neutral-400">
+                        Receipt
+                      </dt>
+                      <dd className="mt-0.5 text-sm font-medium text-neutral-700">
+                        {receipt}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-medium uppercase tracking-[0.08em] text-neutral-400">
+                        Order total
+                      </dt>
+                      <dd className="mt-0.5 text-sm font-medium text-neutral-700">
+                        {formatMoney(refundAmount, currency)}
+                      </dd>
+                    </div>
+                  </dl>
                 </div>
               </div>
 
@@ -595,19 +638,28 @@ export default function CustomerPage() {
                 </svg>
               </div>
               <h1 className="heading-glow font-serif text-[2rem] leading-tight">
-                Refund request submitted
+                {endReason === "resolved"
+                  ? "Support ticket closed"
+                  : "Refund request submitted"}
               </h1>
               <p className="mt-2 text-sm text-neutral-500">
-                Thanks for working through this with us &mdash; here&rsquo;s
-                what happens next.
+                {endReason === "resolved"
+                  ? "Thanks for chatting with us — we hope everything goes great from here."
+                  : "Thanks for working through this with us — here's what happens next."}
               </p>
 
               <ol className="mx-auto mt-7 max-w-md space-y-3 text-left">
-                {[
-                  "Check your inbox for the return shipping instructions (we'll send them within a few minutes).",
-                  "Pack the product and send it back using the prepaid label provided.",
-                  "Once we receive the product, your refund will be processed within 3–5 business days.",
-                ].map((step, i) => (
+                {(endReason === "resolved"
+                  ? [
+                      "Your ticket has been closed. No further action is needed on your end.",
+                      "If you need us again, just come back to this page anytime.",
+                    ]
+                  : [
+                      "Your refund request has been submitted to our billing provider.",
+                      "You'll see the amount back on your original payment method within 3–10 business days, depending on your bank.",
+                      "You don't need to ship anything back — we'll take care of everything on our side.",
+                    ]
+                ).map((step, i) => (
                   <li key={i} className="flex items-start gap-3">
                     <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-semibold text-emerald-700">
                       {i + 1}
