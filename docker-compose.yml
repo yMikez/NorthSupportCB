@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: supportchat-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - internal
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: supportchat-app
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      CLICKBANK_API_KEY_READ: ${CLICKBANK_API_KEY_READ}
+      CLICKBANK_API_KEY_WRITE: ${CLICKBANK_API_KEY_WRITE}
+      CLICKBANK_VENDORS: ${CLICKBANK_VENDORS}
+      ADMIN_SECRET: ${ADMIN_SECRET}
+      MOCK_MODE: ${MOCK_MODE:-false}
+      NEXT_PUBLIC_MOCK_MODE: ${NEXT_PUBLIC_MOCK_MODE:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+      - web
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: supportchat-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    networks:
+      - web
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+  web:

@@ -1,0 +1,60 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Outcome {
+  in_progress
+  refund_issued
+  refund_abandoned
+  resolved
+}
+
+enum Mood {
+  unknown
+  calm
+  disappointed
+  angry
+}
+
+model Conversation {
+  id                 String    @id
+  receipt            String
+  vendor             String?
+  productTitle       String?
+  customerEmail      String?
+  customerName       String?
+  refundAmount       Decimal?  @db.Decimal(10, 2)
+  currency           String?
+  ipHash             String?
+  startedAt          DateTime  @default(now())
+  endedAt            DateTime?
+  lastActivityAt     DateTime  @default(now())
+  initialMood        Mood      @default(unknown)
+  outcome            Outcome   @default(in_progress)
+  retentionAttempts  Int       @default(0)
+  messages           Message[]
+
+  @@index([receipt])
+  @@index([vendor])
+  @@index([startedAt])
+  @@index([outcome])
+  @@index([lastActivityAt])
+}
+
+model Message {
+  id              String       @id @default(cuid())
+  conversationId  String
+  role            String
+  content         String
+  createdAt       DateTime     @default(now())
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([createdAt])
+}

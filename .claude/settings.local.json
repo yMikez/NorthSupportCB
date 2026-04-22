@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "WebFetch(domain:support.clickbank.com)",
+      "WebSearch",
+      "Bash(npm run *)",
+      "Bash(echo \"Started dev server PID $!\")",
+      "Read(//tmp/**)",
+      "Bash(curl -s -X POST http://localhost:3001/api/check-ticket -H \"Content-Type: application/json\" -d '{\"receipt\":\"ABC1234\"}')",
+      "Bash(curl -s -X POST http://localhost:3001/api/check-ticket -H \"Content-Type: application/json\" -d '{\"receipt\":\"OPEN123\"}')",
+      "Bash(curl -s -X POST http://localhost:3001/api/refund-amount -H \"Content-Type: application/json\" -d '{\"receipt\":\"ABC1234\"}')",
+      "Bash(curl -s -X POST http://localhost:3001/api/refund-amount -H \"Content-Type: application/json\" -d '{\"receipt\":\"INVALID1\"}')",
+      "Bash(curl -s -N -X POST http://localhost:3001/api/chat -H \"Content-Type: application/json\" -d '{\"receipt\":\"ABC1234\",\"refundAmount\":49.99,\"currency\":\"USD\",\"messages\":[{\"role\":\"user\",\"content\":\"I want my money back\"}]}')",
+      "Bash(kill 1907)",
+      "Bash(DATABASE_URL=\"postgresql://x:x@localhost:5432/x\" npm run build)"
+    ]
+  }
+}
