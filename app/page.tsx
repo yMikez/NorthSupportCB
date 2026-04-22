@@ -31,7 +31,8 @@ type ExistingTicket = {
   openedDate: string;
 };
 
-const ACTION_REGEX = /\{\s*"action"\s*:\s*"(?:create_refund|resolve)"[^}]*\}/;
+const ACTION_REGEX =
+  /\{\s*"action"\s*:\s*"(?:create_refund|offer_close|resolve)"[^}]*\}/;
 
 function formatMoney(amount: number, currency: string): string {
   try {
@@ -115,6 +116,8 @@ export default function CustomerPage() {
   const [endReason, setEndReason] = useState<"refund" | "resolved" | null>(
     null,
   );
+  const [offerClose, setOfferClose] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
 
@@ -252,6 +255,7 @@ export default function CustomerPage() {
     setInput("");
     setSending(true);
     setStreaming(true);
+    setOfferClose(null);
 
     try {
       const res = await fetch("/api/chat", {
@@ -316,6 +320,8 @@ export default function CustomerPage() {
           const r = parsed.receipt || receipt.trim();
           if (parsed.action === "create_refund") {
             await triggerRefund(r);
+          } else if (parsed.action === "offer_close") {
+            setOfferClose(r);
           } else if (parsed.action === "resolve") {
             await triggerResolve(r);
           }
@@ -346,6 +352,15 @@ export default function CustomerPage() {
     setMessages([]);
     setInput("");
     setEndReason(null);
+    setOfferClose(null);
+    setClosing(false);
+  }
+
+  async function confirmCloseTicket() {
+    if (!offerClose || closing) return;
+    setClosing(true);
+    await triggerResolve(offerClose);
+    setClosing(false);
   }
 
   return (
@@ -583,6 +598,42 @@ export default function CustomerPage() {
                   </div>
                 )}
               </div>
+
+              {offerClose && (
+                <div className="border-t border-emerald-100 bg-[#f0fdf4] px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-emerald-800">
+                      Tudo resolvido? Encerre o atendimento quando quiser.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={confirmCloseTicket}
+                      disabled={closing}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-60"
+                    >
+                      {closing ? (
+                        "Closing…"
+                      ) : (
+                        <>
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-3.5 w-3.5"
+                            aria-hidden="true"
+                          >
+                            <path d="M20 6 9 17l-5-5" />
+                          </svg>
+                          Close support ticket
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <form
                 onSubmit={sendMessage}
