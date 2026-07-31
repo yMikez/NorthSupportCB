@@ -2,7 +2,6 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Alert } from "@/components/ui/Alert";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ChatBubble } from "@/components/ui/ChatBubble";
@@ -16,7 +15,7 @@ import { DEFAULT_AGENT, pickAgent, type SupportAgent } from "@/lib/agents";
 
 const BRAND_NAME = "Support Center";
 
-type Phase = "identify" | "existing" | "chat" | "submitted";
+type Phase = "identify" | "chat" | "submitted";
 
 /** Mirrors the server-side check in lib/email.ts — the mail server is the real authority. */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -70,14 +69,6 @@ type ChatMessage = {
   timestamp: string;
 };
 
-/** An earlier refund for this same order — shown instead of a second chat. */
-type ExistingCase = {
-  type: string;
-  status: string;
-  openedDate: string;
-  reference: string;
-};
-
 // The action key is "order"; "receipt" is still accepted so older knowledge
 // files that spell it the ClickBank way keep working.
 const ACTION_REGEX =
@@ -110,7 +101,7 @@ function buildSteps(phase: Phase): StepperStep[] {
       { label: "Resolved", state: "upcoming" },
     ];
   }
-  if (phase === "existing" || phase === "chat") {
+  if (phase === "chat") {
     return [
       { label: "Your email", state: "complete" },
       { label: "Talk to support", state: "active" },
@@ -155,7 +146,6 @@ export default function CustomerPage() {
   const [globalError, setGlobalError] = useState("");
   const [globalDetail, setGlobalDetail] = useState("");
 
-  const [existingCase, setExistingCase] = useState<ExistingCase | null>(null);
   const [platform, setPlatform] = useState<string>("");
   const [refundAmount, setRefundAmount] = useState(0);
   const [currency, setCurrency] = useState("USD");
@@ -228,12 +218,9 @@ export default function CustomerPage() {
       setCurrency(data.currency ?? "USD");
       setProductTitle(data.productTitle ?? "");
 
-      if (data.existingCase) {
-        setExistingCase(data.existingCase);
-        setPhase("existing");
-        return;
-      }
-
+      // A case already on record is not a reason to turn anyone away: someone
+      // who was refunded last week may have a new problem today. They go
+      // straight into a fresh conversation, same as a first-time customer.
       const firstName: string = data.firstName ?? "";
       setCustomerName(firstName);
       const newConversationId =
@@ -442,7 +429,6 @@ export default function CustomerPage() {
     setOrderNumber(null);
     setGlobalError("");
     setGlobalDetail("");
-    setExistingCase(null);
     setPlatform("");
     setRefundAmount(0);
     setCurrency("USD");
@@ -531,79 +517,6 @@ export default function CustomerPage() {
 
               <div className="mt-7 border-t border-neutral-200 pt-5 animate-fade-up-soft delay-600">
                 <TrustBadges />
-              </div>
-            </Card>
-          )}
-
-          {phase === "existing" && existingCase && (
-            <Card variant="glass" padding="lg">
-              <div className="flex items-start gap-3">
-                <span className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary-600">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    className="h-5 w-5"
-                    aria-hidden="true"
-                  >
-                    <circle cx="12" cy="12" r="9" />
-                    <path d="M12 11v5m0-8.5h.01" strokeLinecap="round" />
-                  </svg>
-                </span>
-                <div className="flex-1">
-                  <h2 className="font-serif text-xl text-neutral-900">
-                    We&rsquo;re already on this one
-                  </h2>
-                  <p className="mt-1 text-sm text-neutral-500">
-                    Your request{" "}
-                    <span className="font-semibold text-neutral-900">
-                      #{existingCase.reference}
-                    </span>{" "}
-                    is already being handled. There&rsquo;s nothing else you
-                    need to do.
-                  </p>
-                </div>
-              </div>
-
-              <dl className="mt-5 grid grid-cols-1 gap-3 rounded-xl border border-primary-100 bg-primary-50/60 p-4 text-sm sm:grid-cols-3">
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.1em] text-neutral-400">
-                    Status
-                  </dt>
-                  <dd className="mt-1.5">
-                    <Badge variant="info">
-                      {existingCase.status || "Open"}
-                    </Badge>
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.1em] text-neutral-400">
-                    Type
-                  </dt>
-                  <dd className="mt-1.5 font-medium text-neutral-800">
-                    {existingCase.type || "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.1em] text-neutral-400">
-                    Opened
-                  </dt>
-                  <dd className="mt-1.5 font-medium text-neutral-800">
-                    {existingCase.openedDate || "—"}
-                  </dd>
-                </div>
-              </dl>
-
-              <div className="mt-6">
-                <Button
-                  variant="secondary"
-                  tone="light"
-                  onClick={reset}
-                  fullWidth
-                >
-                  Use a different email
-                </Button>
               </div>
             </Card>
           )}

@@ -16,7 +16,13 @@
       "Bash(grep -rIn -E \"sk-ant-|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN .*PRIVATE KEY|password[\\\\\"' ]*[:=][\\\\\"' ]*[^\\\\\"'\\\\\\\\s]{8,}\" --include=\"*.ts\" --include=\"*.tsx\" --include=\"*.mjs\" --include=\"*.json\" --include=\"*.md\" --include=\"*.yml\" --include=\"*.example\" .)",
       "Bash(echo \"---exit $?\")",
       "Bash(git rm *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git config *)",
+      "Bash(git push *)",
+      "Bash(git checkout *)",
+      "Bash(sed -i '199d' app/api/lookup-order/route.ts)",
+      "Bash(sed -i '201,302d' app/api/lookup-order/route.ts)"
     ]
   }
 }
