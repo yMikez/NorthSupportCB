@@ -74,19 +74,46 @@ POSTGRES_USER=supportchat
 POSTGRES_PASSWORD=<gerar com: openssl rand -base64 32>
 POSTGRES_DB=supportchat
 
-CLICKBANK_API_KEY_READ=API-...
-CLICKBANK_API_KEY_WRITE=API-...
-CLICKBANK_VENDORS=neurompro,burnthermo,maxvitaliz,glycopulse
-
 ANTHROPIC_API_KEY=sk-ant-...
 
 ADMIN_SECRET=<gerar com: openssl rand -base64 24>
+
+# Plataformas de venda
+PLATFORMS=buygoods,digistore24,jvzoo
+WEBHOOK_SHARED_SECRET=<gerar com: openssl rand -hex 32>
+
+DIGISTORE24_API_KEY=
+DIGISTORE24_ENABLE_API_REFUND=false
+
+BUYGOODS_API_BASE=
+BUYGOODS_API_KEY=
+BUYGOODS_ENABLE_API_REFUND=false
+
+JVZOO_SECRET_KEY=
+JVZOO_AMOUNT_IN_CENTS=true
+
+# Mapa produto → arquivo em knowledge/
+PRODUCT_VENDOR_MAP=
 
 MOCK_MODE=false
 NEXT_PUBLIC_MOCK_MODE=false
 ```
 
 Ctrl+O, Enter, Ctrl+X.
+
+### Webhooks das plataformas
+
+Depois que o domínio estiver no ar, configure em cada plataforma:
+
+| Plataforma | Onde | URL |
+| --- | --- | --- |
+| JVZoo | Produto → JVZIPN URL | `https://<domínio>/api/webhooks/jvzoo` |
+| BuyGoods | Postback / webhook de venda | `https://<domínio>/api/webhooks/buygoods?token=<WEBHOOK_SHARED_SECRET>` |
+| Digistore24 | Produto → IPN | `https://<domínio>/api/webhooks/digistore24?token=<WEBHOOK_SHARED_SECRET>` |
+
+Sem isso, pedidos do JVZoo (e do BuyGoods enquanto não houver API REST) **não são
+encontrados** pelo atendente. Confira o estado de tudo em `/api/diagnose`
+(precisa estar logado no `/admin`).
 
 ## 5. Subir os containers
 

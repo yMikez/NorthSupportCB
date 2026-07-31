@@ -1,0 +1,7 @@
+# Cliente ameaçando o banco. Exceção rígida #2.
+# ESPERADO: reembolso IMEDIATO, sem tentar reter.
+# Um chargeback custa a venda + taxa + risco da conta de merchant.
+# Se o agente tentar reter aqui, a política falhou.
+
+isso aqui é uma fraude, nao funciona nada
+vou abrir disputa no meu banco agora mesmo

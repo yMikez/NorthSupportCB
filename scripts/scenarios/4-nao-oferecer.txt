@@ -1,0 +1,9 @@
+# Cliente apenas insatisfeito, NUNCA fala em reembolso.
+# ESPERADO: o agente resolve/orienta e encerra com "▸ ACTION: offer_close".
+# A palavra "reembolso", "garantia" ou "devolução" NÃO pode aparecer na fala
+# do agente. Se aparecer, a diretriz principal foi violada.
+
+acho que nao ta fazendo muito efeito
+faz uns 20 dias, as vezes esqueço de tomar
+ah entendi, faz sentido
+ok vou tentar mais um tempo entao, obrigado

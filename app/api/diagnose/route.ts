@@ -1,147 +1,161 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { prisma } from "@/lib/db";
+import {
+  devDetail,
+  enabledPlatformIds,
+  findOrder,
+  getAdapter,
+  isMockMode,
+  platformStatuses,
+} from "@/lib/platforms";
+import { supportEmail } from "@/lib/mode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const BASE_URL = "https://api.clickbank.com/rest/1.3";
-
-type Check = {
-  name: string;
-  method: string;
-  url: string;
-  status: number | null;
-  ok: boolean;
-  bodyPreview: string;
-  hint?: string;
-};
-
-async function probe(
-  name: string,
-  url: string,
-  key: string,
-  opts: { method?: string; body?: string; contentType?: string } = {},
-): Promise<Check> {
-  try {
-    const headers: Record<string, string> = {
-      Authorization: key,
-      Accept: "application/json",
-    };
-    if (opts.contentType) headers["Content-Type"] = opts.contentType;
-
-    const res = await fetch(url, {
-      method: opts.method ?? "GET",
-      headers,
-      body: opts.body,
-      cache: "no-store",
-    });
-    const text = await res.text();
-    return {
-      name,
-      method: opts.method ?? "GET",
-      url,
-      status: res.status,
-      ok: res.ok,
-      bodyPreview: text.slice(0, 600),
-      hint: hintFor(res.status, text),
-    };
-  } catch (err) {
-    return {
-      name,
-      method: opts.method ?? "GET",
-      url,
-      status: null,
-      ok: false,
-      bodyPreview: String(err),
-      hint: "Network error reaching ClickBank",
-    };
-  }
-}
-
-function hintFor(status: number, body: string): string | undefined {
-  if (status === 401)
-    return "401 — your API key is invalid or not activated. Check it in ClickBank under Settings → API keys.";
-  if (status === 403)
-    return "403 — your API key is valid but is missing the required role (API Order Read / API Order Write).";
-  if (status === 404)
-    return "404 — receipt was not found in your vendor account. Try a receipt from your ClickBank dashboard.";
-  if (status === 429) return "429 — rate limited (10/sec per IP).";
-  if (status >= 500) return "5xx — ClickBank is having trouble; retry later.";
-  if (body && body.trim().startsWith("<"))
-    return "Response looks like XML/HTML — something is likely wrong with the Accept header or auth.";
-  return undefined;
-}
-
+/**
+ * Health check for the platform layer. Admin-only — it reports which
+ * credentials are present.
+ *
+ *   GET /api/diagnose                     → config + readiness of each platform
+ *   GET /api/diagnose?orderId=DS12345     → also runs a live lookup
+ */
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const receipt = (searchParams.get("receipt") || "").trim();
+  const secret = process.env.ADMIN_SECRET;
+  const cookie = cookies().get("admin_auth")?.value;
+  if (!secret || cookie !== secret) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
 
-  const readKey = process.env.CLICKBANK_API_KEY_READ;
-  const writeKey = process.env.CLICKBANK_API_KEY_WRITE;
+  const { searchParams } = new URL(req.url);
+  const orderId = (searchParams.get("orderId") ?? "").trim();
 
   const env = {
     MOCK_MODE: process.env.MOCK_MODE ?? null,
-    CLICKBANK_API_KEY_READ: readKey
-      ? maskKey(readKey)
-      : "(missing)",
-    CLICKBANK_API_KEY_WRITE: writeKey
-      ? maskKey(writeKey)
-      : "(missing)",
-    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? "set" : "(missing)",
-    ADMIN_SECRET: process.env.ADMIN_SECRET ? "set" : "(missing)",
+    PLATFORMS: process.env.PLATFORMS ?? "(unset → all)",
+    ANTHROPIC_API_KEY: present("ANTHROPIC_API_KEY"),
+    ADMIN_SECRET: present("ADMIN_SECRET"),
+    DATABASE_URL: present("DATABASE_URL"),
+    WEBHOOK_SHARED_SECRET: present("WEBHOOK_SHARED_SECRET"),
+    PRODUCT_VENDOR_MAP: process.env.PRODUCT_VENDOR_MAP ? "set" : "(unset)",
+    SUPPORT_EMAIL: process.env.SUPPORT_EMAIL?.trim() || "(unset)",
     NODE_ENV: process.env.NODE_ENV,
   };
 
-  const checks: Check[] = [];
+  const platforms = platformStatuses();
+  const database = await checkDatabase();
+  const support = checkSupportInbox();
 
-  if (!readKey) {
-    return NextResponse.json({
-      env,
-      checks: [],
-      message: "CLICKBANK_API_KEY_READ is not set — nothing to test.",
-    });
+  const warnings: string[] = [];
+  if (!isMockMode()) {
+    for (const platform of platforms) {
+      if (platform.enabled && !platform.ready) {
+        warnings.push(
+          `${platform.label} is enabled but missing: ${platform.missingEnv.join(", ")}`,
+        );
+      }
+      if (platform.enabled) {
+        for (const note of platform.notes) {
+          warnings.push(`${platform.label}: ${note}`);
+        }
+      }
+    }
+    if (platforms.every((p) => !p.enabled || !p.ready)) {
+      warnings.push("No platform is ready — customer lookups will all fail.");
+    }
   }
 
-  checks.push(
-    await probe(
-      "GET /tickets/list?status=open (list tickets, read role)",
-      `${BASE_URL}/tickets/list?status=open`,
-      readKey,
-    ),
-  );
+  warnings.push(...support.warnings);
 
-  if (receipt) {
-    checks.push(
-      await probe(
-        `GET /orders2/${receipt} (fetch order by receipt)`,
-        `${BASE_URL}/orders2/${encodeURIComponent(receipt)}`,
-        readKey,
-      ),
-    );
-    checks.push(
-      await probe(
-        `GET /tickets/list?receipt=${receipt}`,
-        `${BASE_URL}/tickets/list?receipt=${encodeURIComponent(receipt)}`,
-        readKey,
-      ),
-    );
-    checks.push(
-      await probe(
-        `GET /tickets/refundAmounts/${receipt}?refundType=FULL`,
-        `${BASE_URL}/tickets/refundAmounts/${encodeURIComponent(
-          receipt,
-        )}?refundType=FULL`,
-        readKey,
-      ),
-    );
+  const response: Record<string, unknown> = {
+    env,
+    enabled: enabledPlatformIds(),
+    platforms,
+    database,
+    support,
+    warnings,
+  };
+
+  if (orderId) {
+    response.lookup = await probeLookup(orderId);
   }
 
-  return NextResponse.json(
-    { env, receipt: receipt || null, checks },
-    { status: 200 },
-  );
+  return NextResponse.json(response);
 }
 
-function maskKey(k: string): string {
-  if (k.length <= 10) return "***";
-  return `${k.slice(0, 6)}…${k.slice(-4)}`;
+function present(name: string): string {
+  return process.env[name]?.trim() ? "set" : "(missing)";
+}
+
+async function checkDatabase() {
+  try {
+    const [orders, pendingRefunds, conversations] = await Promise.all([
+      prisma.orderRecord.count(),
+      prisma.refundRequest.count({ where: { status: "pending" } }),
+      prisma.conversation.count(),
+    ]);
+    return { ok: true, orders, pendingRefunds, conversations };
+  } catch (err) {
+    return { ok: false, error: devDetail(err) ?? "connection failed" };
+  }
+}
+
+/**
+ * The app sends no email. What matters is the address the customer is pointed
+ * at: it goes into the `mailto:` on the confirmation screen, so a typo here
+ * means every handover lands nowhere and nobody finds out.
+ */
+function checkSupportInbox() {
+  const inbox = supportEmail();
+  const warnings: string[] = [];
+
+  if (!process.env.SUPPORT_EMAIL?.trim()) {
+    warnings.push(
+      `SUPPORT_EMAIL is unset, so handovers point customers at the default "${inbox}". Set it to the inbox a person actually reads.`,
+    );
+  }
+
+  return {
+    // Not a transport — nothing is sent from here.
+    channel: "mailto (the customer sends from their own mail app)",
+    inbox,
+    warnings,
+  };
+}
+
+async function probeLookup(orderId: string) {
+  const perPlatform: Record<string, unknown> = {};
+
+  for (const id of enabledPlatformIds()) {
+    const adapter = getAdapter(id);
+    if (!adapter) continue;
+    const started = Date.now();
+    try {
+      const order = await adapter.getOrder(orderId);
+      perPlatform[id] = {
+        found: order !== null,
+        ms: Date.now() - started,
+        vendor: order?.vendor ?? null,
+        knowledgeFileExpected: order?.vendor ? `knowledge/${order.vendor}.md` : null,
+        amount: order?.amount ?? null,
+      };
+    } catch (err) {
+      perPlatform[id] = {
+        found: false,
+        ms: Date.now() - started,
+        error: devDetail(err),
+      };
+    }
+  }
+
+  const resolved = await findOrder(orderId).catch(() => null);
+
+  return {
+    orderId,
+    resolvedTo: resolved
+      ? { platform: resolved.order.platform, vendor: resolved.order.vendor }
+      : null,
+    perPlatform,
+  };
 }

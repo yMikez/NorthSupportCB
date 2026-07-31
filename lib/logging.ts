@@ -4,7 +4,8 @@ import type { ChatMessage } from "./claude";
 
 export interface StartConversationInput {
   conversationId: string;
-  receipt: string;
+  platform: string | null;
+  orderId: string;
   vendor: string | null;
   productTitle: string | null;
   customerName: string | null;
@@ -27,7 +28,8 @@ export async function ensureConversation(
       update: { lastActivityAt: new Date() },
       create: {
         id: input.conversationId,
-        receipt: input.receipt,
+        platform: input.platform,
+        orderId: input.orderId,
         vendor: input.vendor,
         productTitle: input.productTitle,
         customerName: input.customerName,
@@ -83,12 +85,13 @@ export async function appendAssistantMessage(
 }
 
 export async function markConversationOutcome(
-  receipt: string,
-  outcome: "refund_issued" | "refund_abandoned" | "resolved",
+  orderId: string,
+  outcome: "refund_issued" | "refund_abandoned" | "resolved" | "escalated",
+  platform?: string | null,
 ): Promise<void> {
   try {
     const latest = await prisma.conversation.findFirst({
-      where: { receipt },
+      where: { orderId, ...(platform ? { platform } : {}) },
       orderBy: { startedAt: "desc" },
     });
     if (!latest) return;

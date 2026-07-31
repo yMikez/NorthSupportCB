@@ -8,10 +8,12 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 const variants: Record<BadgeVariant, string> = {
-  success: "bg-primary-50 text-primary-700",
+  // Success keeps its own green so "resolved" stays distinguishable from the
+  // blue brand surfaces it sits on.
+  success: "bg-emerald-50 text-emerald-700",
   warning: "bg-amber-50 text-amber-700",
   error: "bg-red-50 text-red-700",
-  info: "bg-blue-50 text-blue-700",
+  info: "bg-primary-50 text-primary-700",
   neutral: "bg-neutral-100 text-neutral-700",
 };
 

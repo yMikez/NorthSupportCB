@@ -1,4 +1,4 @@
-# Max Vitalize — product knowledge
+﻿# Max Vitalize — product knowledge
 
 ## Product
 - **Name:** Max Vitalize
@@ -50,6 +50,6 @@ Use these when a customer (not hostile) wants to quit:
 - 60-day money-back guarantee from shipping date.
 - We handle returns internally — customer does NOT need to ship anything back (see `_common.md` → Refund process).
 
-## Things that would make us offer the refund right away (besides anger)
+## Hard-exception cases for this product (refund immediately, no retention)
 - Customer reports an adverse reaction (headache, chest pain, dizziness). Never try to retain. Apologize, offer refund, and recommend they consult a doctor.
 - Customer mentions they were already told by a doctor to stop.

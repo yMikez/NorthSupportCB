@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "@/components/ui/Alert";
@@ -6,9 +6,12 @@ import { Badge, type BadgeVariant } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { AdminShell } from "@/components/layout/AdminShell";
+import { RefundQueue } from "@/components/admin/RefundQueue";
 
 const BRAND_NAME = "Support Center";
 const PAGE_SIZE = 25;
+
+type Tab = "conversations" | "refunds";
 
 type Outcome =
   | "in_progress"
@@ -20,7 +23,9 @@ type Mood = "unknown" | "calm" | "disappointed" | "angry";
 
 interface ConversationRow {
   id: string;
-  receipt: string;
+  platform: string | null;
+  platformLabel: string | null;
+  orderId: string;
   vendor: string | null;
   productTitle: string | null;
   customerName: string | null;
@@ -40,9 +45,16 @@ interface Stats {
   byOutcome: Record<Outcome, number>;
   byMood: Record<Mood, number>;
   byVendor: Record<string, number>;
+  byPlatform: Record<string, number>;
   totalFinalized: number;
   retentionRate: number;
   refundRate: number;
+  pendingRefunds: number;
+}
+
+interface PlatformOption {
+  id: string;
+  label: string;
 }
 
 interface ListResponse {
@@ -52,6 +64,7 @@ interface ListResponse {
   conversations: ConversationRow[];
   stats: Stats;
   vendors: string[];
+  platforms: PlatformOption[];
 }
 
 interface DetailMessage {
@@ -161,6 +174,8 @@ function formatMoney(amount: number | null, currency: string | null): string {
 }
 
 export default function AdminPage() {
+  const [tab, setTab] = useState<Tab>("conversations");
+  const [pendingRefunds, setPendingRefunds] = useState(0);
   const [data, setData] = useState<ListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -169,6 +184,7 @@ export default function AdminPage() {
   const [customFrom, setCustomFrom] = useState<string>("");
   const [customTo, setCustomTo] = useState<string>("");
   const [vendor, setVendor] = useState<string>("");
+  const [platform, setPlatform] = useState<string>("");
   const [outcome, setOutcome] = useState<string>("");
   const [mood, setMood] = useState<string>("");
   const [search, setSearch] = useState<string>("");
@@ -195,13 +211,14 @@ export default function AdminPage() {
     }
 
     if (vendor) params.set("vendor", vendor);
+    if (platform) params.set("platform", platform);
     if (outcome) params.set("outcome", outcome);
     if (mood) params.set("mood", mood);
     if (search.trim()) params.set("search", search.trim());
     params.set("page", String(page));
     params.set("pageSize", String(PAGE_SIZE));
     return params.toString();
-  }, [preset, customFrom, customTo, vendor, outcome, mood, search, page]);
+  }, [preset, customFrom, customTo, vendor, platform, outcome, mood, search, page]);
 
   const load = useCallback(async () => {
     setError("");
@@ -219,6 +236,7 @@ export default function AdminPage() {
         return;
       }
       setData(body);
+      setPendingRefunds(body.stats?.pendingRefunds ?? 0);
     } catch {
       setError("Network error while loading conversations.");
     } finally {
@@ -232,7 +250,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [preset, customFrom, customTo, vendor, outcome, mood, search]);
+  }, [preset, customFrom, customTo, vendor, platform, outcome, mood, search]);
 
   async function signOut() {
     await fetch("/api/admin/login", { method: "DELETE" });
@@ -245,6 +263,42 @@ export default function AdminPage() {
   return (
     <AdminShell brandName={BRAND_NAME} onSignOut={signOut}>
       <div className="animate-fade-in-up space-y-6">
+        <nav className="flex gap-2 border-b border-neutral-200">
+          {(
+            [
+              ["conversations", "Conversations", 0],
+              ["refunds", "Work queue", pendingRefunds],
+            ] as [Tab, string, number][]
+          ).map(([key, label, count]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={
+                tab === key
+                  ? "-mb-px border-b-2 border-primary-500 px-4 py-2.5 text-sm font-semibold text-primary-700"
+                  : "-mb-px border-b-2 border-transparent px-4 py-2.5 text-sm text-neutral-500 hover:text-neutral-800"
+              }
+            >
+              {label}
+              {count > 0 && (
+                <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                  {count}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {tab === "refunds" && (
+          <RefundQueue
+            onCountChange={setPendingRefunds}
+            onOpenConversation={setDetailId}
+          />
+        )}
+
+        {tab === "conversations" && (
+        <div className="space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="font-serif text-2xl sm:text-3xl">Conversations</h1>
@@ -317,6 +371,21 @@ export default function AdminPage() {
               </>
             )}
 
+            <FilterField label="Platform">
+              <select
+                value={platform}
+                onChange={(e) => setPlatform(e.target.value)}
+                className="admin-input"
+              >
+                <option value="">All</option>
+                {data?.platforms?.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </FilterField>
+
             <FilterField label="Vendor">
               <select
                 value={vendor}
@@ -365,7 +434,7 @@ export default function AdminPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Receipt, email or name…"
+                placeholder="Order, email or name…"
                 className="admin-input"
                 style={{ minWidth: "22ch" }}
               />
@@ -414,14 +483,16 @@ export default function AdminPage() {
 
         {/* Table */}
         <Card padding="none" className="overflow-hidden">
-          <div className="hidden border-b border-neutral-100 bg-[#f5f5f4] px-5 py-3 text-xs font-semibold uppercase tracking-[0.06em] text-[#57534e] md:grid md:grid-cols-12">
+          <div className="hidden border-b border-neutral-100 bg-[#f1f5f9] px-5 py-3 text-xs font-semibold uppercase tracking-[0.06em] text-[#475569] md:grid md:grid-cols-12">
             <div className="md:col-span-2">Started</div>
             <div className="md:col-span-2">Customer</div>
-            <div className="md:col-span-2">Receipt</div>
+            {/* Holds the order number when the customer's email matched a
+                purchase, the email address itself when it did not. */}
+            <div className="md:col-span-2">Case</div>
+            <div className="md:col-span-1">Platform</div>
             <div className="md:col-span-1">Vendor</div>
             <div className="md:col-span-1">Mood</div>
             <div className="md:col-span-1">Msg</div>
-            <div className="md:col-span-1">Duration</div>
             <div className="md:col-span-2">Outcome</div>
           </div>
 
@@ -448,7 +519,7 @@ export default function AdminPage() {
                   <li
                     key={c.id}
                     onClick={() => setDetailId(c.id)}
-                    className={`${stripe} cursor-pointer px-5 py-4 text-sm transition-colors duration-100 hover:bg-[#fafaf9] md:grid md:grid-cols-12 md:items-center`}
+                    className={`${stripe} cursor-pointer px-5 py-4 text-sm transition-colors duration-100 hover:bg-[#f8fafc] md:grid md:grid-cols-12 md:items-center`}
                   >
                     <div className="text-neutral-700 md:col-span-2">
                       {formatDateTime(c.startedAt)}
@@ -462,7 +533,14 @@ export default function AdminPage() {
                       )}
                     </div>
                     <div className="mt-1 font-mono text-xs text-neutral-700 md:col-span-2 md:mt-0">
-                      {c.receipt}
+                      {c.orderId}
+                    </div>
+                    <div className="mt-1 md:col-span-1 md:mt-0">
+                      {c.platformLabel ? (
+                        <Badge variant="info">{c.platformLabel}</Badge>
+                      ) : (
+                        <span className="text-xs text-neutral-300">—</span>
+                      )}
                     </div>
                     <div className="mt-1 md:col-span-1 md:mt-0">
                       {c.vendor ? (
@@ -478,9 +556,6 @@ export default function AdminPage() {
                     </div>
                     <div className="mt-1 text-neutral-700 md:col-span-1 md:mt-0">
                       {c.messagesCount}
-                    </div>
-                    <div className="mt-1 text-neutral-600 md:col-span-1 md:mt-0">
-                      {formatDuration(c.startedAt, c.endedAt)}
                     </div>
                     <div className="mt-2 md:col-span-2 md:mt-0">
                       <Badge variant={OUTCOME_VARIANT[c.outcome]}>
@@ -499,7 +574,7 @@ export default function AdminPage() {
           )}
 
           {data && data.total > PAGE_SIZE && (
-            <div className="flex items-center justify-between border-t border-neutral-100 bg-[#fafaf9] px-5 py-3 text-sm">
+            <div className="flex items-center justify-between border-t border-neutral-100 bg-[#f8fafc] px-5 py-3 text-sm">
               <span className="text-neutral-600">
                 Page {data.page} of {totalPages} · {data.total} total
               </span>
@@ -526,6 +601,8 @@ export default function AdminPage() {
             </div>
           )}
         </Card>
+        </div>
+        )}
       </div>
 
       {detailId && (
@@ -539,16 +616,16 @@ export default function AdminPage() {
         .admin-input {
           min-width: 10ch;
           padding: 0.375rem 0.625rem;
-          border: 1.5px solid #e7e5e4;
+          border: 1.5px solid #e2e8f0;
           border-radius: 8px;
           font-size: 0.875rem;
           background: #ffffff;
-          color: #1c1917;
+          color: #0f172a;
         }
         .admin-input:focus {
           outline: none;
-          border-color: #10b981;
-          box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+          border-color: #2563eb;
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
         }
       `}</style>
     </AdminShell>
@@ -593,12 +670,12 @@ function KpiCard({
           : "border-l-4 border-l-neutral-300";
   return (
     <div
-      className={`rounded-[14px] border border-[#f0f0ef] bg-white p-4 shadow-sm ${accentClass}`}
+      className={`rounded-[14px] border border-[#e9eef5] bg-white p-4 shadow-sm ${accentClass}`}
     >
-      <p className="text-xs font-medium uppercase tracking-wide text-[#a8a29e]">
+      <p className="text-xs font-medium uppercase tracking-wide text-[#94a3b8]">
         {label}
       </p>
-      <p className="mt-1 font-serif text-2xl font-semibold text-[#1c1917]">
+      <p className="mt-1 font-serif text-2xl font-semibold text-[#0f172a]">
         {value}
       </p>
       {hint && <p className="mt-0.5 text-xs text-neutral-500">{hint}</p>}
@@ -702,7 +779,7 @@ function ConversationDrawer({
 
         {data && (
           <>
-            <div className="border-b border-neutral-100 bg-[#fafaf9] px-6 py-4">
+            <div className="border-b border-neutral-100 bg-[#f8fafc] px-6 py-4">
               <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
                 <InfoCell
                   label="Customer"
@@ -710,7 +787,11 @@ function ConversationDrawer({
                     data.customerName || data.customerEmail || "Unknown"
                   }
                 />
-                <InfoCell label="Receipt" value={data.receipt} />
+                <InfoCell label="Case" value={data.orderId} />
+                <InfoCell
+                  label="Platform"
+                  value={data.platformLabel ?? data.platform ?? "—"}
+                />
                 <InfoCell label="Vendor" value={data.vendor ?? "—"} />
                 <InfoCell
                   label="Product"
@@ -752,7 +833,7 @@ function ConversationDrawer({
                   <div
                     className={
                       m.role === "assistant"
-                        ? "max-w-[80%] rounded-2xl rounded-bl-sm border border-neutral-200 bg-[#f0fdf4] px-4 py-3 text-sm text-neutral-800"
+                        ? "max-w-[80%] rounded-2xl rounded-bl-sm border border-neutral-200 bg-[#f8fafc] px-4 py-3 text-sm text-neutral-800"
                         : "max-w-[80%] rounded-2xl rounded-br-sm bg-primary-500 px-4 py-3 text-sm text-white"
                     }
                   >

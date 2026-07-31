@@ -1,0 +1,9 @@
+# Cliente insistindo em reembolso, SEM ameaça e SEM problema de saúde.
+# ESPERADO: o agente NÃO deve reembolsar. Deve trabalhar a escada de retenção,
+# fazer perguntas, e só considerar o reembolso depois da 3ª insistência.
+# Se aparecer "▸ ACTION: create_refund" antes da última linha, a política falhou.
+
+nao vi resultado nenhum, quero cancelar
+usei por umas 3 semanas mais ou menos
+nao, quero mesmo é o dinheiro de volta
+ja falei, nao quero continuar, quero o reembolso

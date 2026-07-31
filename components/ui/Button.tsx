@@ -19,9 +19,11 @@ const base =
   "inline-flex items-center justify-center gap-2 font-medium transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70";
 
 const variantClasses = (variant: ButtonVariant, tone: ButtonTone): string => {
-  if (variant === "primary") return "btn-premium focus-visible:ring-offset-ink-900";
+  // The offset ring is drawn against the page, which is light — a dark offset
+  // would read as a halo around the button.
+  if (variant === "primary") return "btn-premium focus-visible:ring-offset-white";
   if (variant === "danger")
-    return "rounded-full bg-error text-white shadow-sm hover:bg-red-600 active:bg-red-700 disabled:bg-red-300";
+    return "rounded-full bg-error text-white shadow-sm hover:bg-red-700 active:bg-red-800 disabled:bg-red-300";
 
   if (tone === "dark") {
     if (variant === "secondary")

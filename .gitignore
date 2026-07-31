@@ -10,3 +10,9 @@ out
 .vscode
 .idea
 next-env.d.ts
+
+# Estado local do Claude Code - nao pertence ao repositorio
+.claude/settings.local.json
+
+# Artefato incremental do TypeScript
+*.tsbuildinfo

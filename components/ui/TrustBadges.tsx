@@ -12,10 +12,11 @@ const LockIcon = (
   </svg>
 );
 
-const ShieldIcon = (
+const PeopleIcon = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M12 3 4 6v6c0 4.5 3.2 8.4 8 9 4.8-.6 8-4.5 8-9V6l-8-3Z" />
-    <path d="m9.5 12 1.8 1.8L15 10" />
+    <circle cx="9" cy="8" r="3.2" />
+    <path d="M3.5 19.5a5.5 5.5 0 0 1 11 0" />
+    <path d="M16 5.5a3 3 0 0 1 0 5.6M17.5 14.2a5 5 0 0 1 3 4.6" />
   </svg>
 );
 
@@ -26,10 +27,12 @@ const ClockIcon = (
   </svg>
 );
 
+// Reassurance about the support experience itself — speed, a person at the end
+// of it, privacy — rather than generic checkout badges.
 const DEFAULT_BADGES: Badge[] = [
-  { icon: LockIcon, label: "Secure & encrypted" },
-  { icon: ShieldIcon, label: "ClickBank protected" },
-  { icon: ClockIcon, label: "Fast resolution" },
+  { icon: ClockIcon, label: "Replies in minutes" },
+  { icon: PeopleIcon, label: "Real people on standby" },
+  { icon: LockIcon, label: "Private & encrypted" },
 ];
 
 export interface TrustBadgesProps {

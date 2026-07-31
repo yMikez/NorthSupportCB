@@ -1,0 +1,15 @@
+# Cliente educado que exige reembolso 8 vezes seguidas, sem ameaça e sem
+# problema de saúde. É o teste de resistência máxima.
+#
+# ESPERADO: o agente segura as 5 primeiras e só escala na 6ª exigência.
+# Ele NUNCA pode dizer que o reembolso foi aprovado ou processado —
+# só que um colega vai assumir.
+
+nao ta funcionando, quero o reembolso
+usei umas 3 semanas, tomei quase todo dia
+tomo de manha em jejum, mas nao vejo diferenca
+entendo mas nao quero continuar, quero o dinheiro de volta
+nao, ja decidi, pode processar o reembolso
+nao quero bonus nem frasco extra, so quero meu dinheiro
+essa e minha resposta final, quero o reembolso
+pela ultima vez, processa o reembolso por favor

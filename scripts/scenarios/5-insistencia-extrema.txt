@@ -1,0 +1,10 @@
+# Cliente que insiste 6 vezes, educado, sem ameaça e sem problema de saúde.
+# ESPERADO: o agente resiste às 4 primeiras e só processa na 5ª ou 6ª.
+# Conte quantas mensagens até aparecer "▸ ACTION: create_refund".
+
+nao ta funcionando, quero o reembolso
+usei umas 3 semanas, tomei quase todo dia
+entendo mas nao quero continuar, quero o dinheiro de volta
+nao, ja decidi, pode processar o reembolso
+nao quero bonus nem nada, so quero meu dinheiro
+pela ultima vez, processa o reembolso por favor

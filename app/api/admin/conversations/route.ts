@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { getConfiguredVendors } from "@/lib/clickbank";
+import { listKnowledgeVendors } from "@/lib/knowledge";
+import { enabledPlatformIds, getAdapter, isPlatformId } from "@/lib/platforms";
+import { countPendingRefunds } from "@/lib/refunds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,9 +33,10 @@ export async function GET(req: Request) {
   const from = searchParams.get("from");
   const to = searchParams.get("to");
   const vendor = (searchParams.get("vendor") ?? "").trim();
+  const platformParam = (searchParams.get("platform") ?? "").trim().toLowerCase();
   const outcomeParam = (searchParams.get("outcome") ?? "").trim();
   const moodParam = (searchParams.get("mood") ?? "").trim();
-  const receipt = (searchParams.get("receipt") ?? "").trim();
+  const orderId = (searchParams.get("orderId") ?? "").trim();
   const email = (searchParams.get("email") ?? "").trim();
   const search = (searchParams.get("search") ?? "").trim();
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1);
@@ -58,25 +61,34 @@ export async function GET(req: Request) {
     }
   }
   if (vendor) where.vendor = { equals: vendor, mode: "insensitive" };
+  if (isPlatformId(platformParam)) where.platform = platformParam;
   if (outcomeParam && VALID_OUTCOMES.includes(outcomeParam as Outcome)) {
     where.outcome = outcomeParam as Outcome;
   }
   if (moodParam && VALID_MOODS.includes(moodParam as Mood)) {
     where.initialMood = moodParam as Mood;
   }
-  if (receipt) where.receipt = { contains: receipt, mode: "insensitive" };
+  if (orderId) where.orderId = { contains: orderId, mode: "insensitive" };
   if (email) where.customerEmail = { contains: email, mode: "insensitive" };
   if (search) {
     where.OR = [
-      { receipt: { contains: search, mode: "insensitive" } },
+      { orderId: { contains: search, mode: "insensitive" } },
       { customerEmail: { contains: search, mode: "insensitive" } },
       { customerName: { contains: search, mode: "insensitive" } },
     ];
   }
 
   try {
-    const [total, conversations, byOutcome, byVendor, byMood] =
-      await Promise.all([
+    const [
+      total,
+      conversations,
+      byOutcome,
+      byVendor,
+      byMood,
+      byPlatform,
+      pendingRefunds,
+      knowledgeVendors,
+    ] = await Promise.all([
         prisma.conversation.count({ where }),
         prisma.conversation.findMany({
           where,
@@ -85,7 +97,8 @@ export async function GET(req: Request) {
           skip: (page - 1) * pageSize,
           select: {
             id: true,
-            receipt: true,
+            platform: true,
+            orderId: true,
             vendor: true,
             productTitle: true,
             customerName: true,
@@ -116,6 +129,13 @@ export async function GET(req: Request) {
           where,
           _count: { initialMood: true },
         }),
+        prisma.conversation.groupBy({
+          by: ["platform"],
+          where,
+          _count: { platform: true },
+        }),
+        countPendingRefunds(),
+        listKnowledgeVendors(),
       ]);
 
     const outcomeCounts = Object.fromEntries(
@@ -154,7 +174,9 @@ export async function GET(req: Request) {
       pageSize,
       conversations: conversations.map((c) => ({
         id: c.id,
-        receipt: c.receipt,
+        platform: c.platform,
+        platformLabel: c.platform ? (getAdapter(c.platform)?.label ?? c.platform) : null,
+        orderId: c.orderId,
         vendor: c.vendor,
         productTitle: c.productTitle,
         customerName: c.customerName,
@@ -175,11 +197,19 @@ export async function GET(req: Request) {
         byVendor: Object.fromEntries(
           byVendor.map((r) => [r.vendor ?? "(none)", r._count.vendor]),
         ),
+        byPlatform: Object.fromEntries(
+          byPlatform.map((r) => [r.platform ?? "(none)", r._count.platform]),
+        ),
         totalFinalized,
         retentionRate,
         refundRate,
+        pendingRefunds,
       },
-      vendors: getConfiguredVendors(),
+      vendors: knowledgeVendors,
+      platforms: enabledPlatformIds().map((id) => ({
+        id,
+        label: getAdapter(id)?.label ?? id,
+      })),
     });
   } catch (err) {
     console.error("[admin/conversations]", err);

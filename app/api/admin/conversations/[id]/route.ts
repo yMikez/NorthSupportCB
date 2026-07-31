@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
+import { getAdapter } from "@/lib/platforms";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,7 +33,11 @@ export async function GET(
 
     return NextResponse.json({
       id: conv.id,
-      receipt: conv.receipt,
+      platform: conv.platform,
+      platformLabel: conv.platform
+        ? (getAdapter(conv.platform)?.label ?? conv.platform)
+        : null,
+      orderId: conv.orderId,
       vendor: conv.vendor,
       productTitle: conv.productTitle,
       customerName: conv.customerName,

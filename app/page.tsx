@@ -10,13 +10,59 @@ import { Input } from "@/components/ui/Input";
 import { Stepper, type StepperStep } from "@/components/ui/Stepper";
 import { TrustBadges } from "@/components/ui/TrustBadges";
 import { TypingIndicator } from "@/components/ui/TypingIndicator";
+import { AgentAvatar } from "@/components/ui/AgentAvatar";
 import { PageShell } from "@/components/layout/PageShell";
+import { DEFAULT_AGENT, pickAgent, type SupportAgent } from "@/lib/agents";
 
 const BRAND_NAME = "Support Center";
-const AGENT_NAME = "Maya";
-const AGENT_INITIAL = "M";
 
-type Phase = "receipt" | "existing" | "chat" | "submitted";
+type Phase = "identify" | "existing" | "chat" | "submitted";
+
+/** Mirrors the server-side check in lib/email.ts — the mail server is the real authority. */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/** Everything the pre-written message quotes, as the server resolved it. */
+type Handover = {
+  supportEmail: string;
+  reference: string;
+  agentName: string;
+  orderId: string | null;
+  productTitle: string | null;
+};
+
+/**
+ * A `mailto:` the customer can send without typing anything.
+ *
+ * The case details are already in the body, so the person who picks it up can
+ * find the conversation — that is the job the automatic email used to do, minus
+ * a delivery step that could fail without anyone noticing.
+ */
+function buildHandoverMailto(handover: Handover, customerEmail: string): string {
+  const subject = handover.reference
+    ? `Support case #${handover.reference}`
+    : "My support request";
+
+  const lines = [
+    "Hi,",
+    "",
+    `I was just chatting with ${handover.agentName} and was passed to your team.`,
+    "",
+  ];
+  if (handover.reference) lines.push(`Reference: #${handover.reference}`);
+  if (handover.orderId) lines.push(`Order: ${handover.orderId}`);
+  if (handover.productTitle) lines.push(`Product: ${handover.productTitle}`);
+  if (customerEmail) lines.push(`Account email: ${customerEmail}`);
+  lines.push(
+    "",
+    "— write anything else you'd like us to know below this line —",
+    "",
+    "",
+  );
+
+  return `mailto:${handover.supportEmail}?subject=${encodeURIComponent(
+    subject,
+  )}&body=${encodeURIComponent(lines.join("\n"))}`;
+}
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -24,15 +70,18 @@ type ChatMessage = {
   timestamp: string;
 };
 
-type ExistingTicket = {
-  ticketId: string;
+/** An earlier refund for this same order — shown instead of a second chat. */
+type ExistingCase = {
   type: string;
   status: string;
   openedDate: string;
+  reference: string;
 };
 
+// The action key is "order"; "receipt" is still accepted so older knowledge
+// files that spell it the ClickBank way keep working.
 const ACTION_REGEX =
-  /\{\s*"action"\s*:\s*"(?:create_refund|offer_close|resolve)"[^}]*\}/;
+  /\{\s*"action"\s*:\s*"(?:escalate_to_human|create_refund|offer_close|resolve)"[^}]*\}/;
 
 function formatMoney(amount: number, currency: string): string {
   try {
@@ -54,22 +103,22 @@ function stripAction(content: string): string {
 }
 
 function buildSteps(phase: Phase): StepperStep[] {
-  if (phase === "receipt") {
+  if (phase === "identify") {
     return [
-      { label: "Verify order", state: "active" },
+      { label: "Your email", state: "active" },
       { label: "Talk to support", state: "upcoming" },
       { label: "Resolved", state: "upcoming" },
     ];
   }
   if (phase === "existing" || phase === "chat") {
     return [
-      { label: "Verify order", state: "complete" },
+      { label: "Your email", state: "complete" },
       { label: "Talk to support", state: "active" },
       { label: "Resolved", state: "upcoming" },
     ];
   }
   return [
-    { label: "Verify order", state: "complete" },
+    { label: "Your email", state: "complete" },
     { label: "Talk to support", state: "complete" },
     { label: "Resolved", state: "complete" },
   ];
@@ -91,19 +140,25 @@ const SendArrowIcon = (
 );
 
 export default function CustomerPage() {
-  const [phase, setPhase] = useState<Phase>("receipt");
-  const [receipt, setReceipt] = useState("");
-  const [receiptError, setReceiptError] = useState("");
+  const [phase, setPhase] = useState<Phase>("identify");
+  const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  /**
+   * What every downstream call keys on: the resolved order number when the
+   * email matched a purchase, the email address itself when it did not.
+   */
+  const [caseKey, setCaseKey] = useState("");
+  /** Only set when a purchase was actually found — drives what we show. */
+  const [orderNumber, setOrderNumber] = useState<string | null>(null);
   const [globalError, setGlobalError] = useState("");
   const [globalDetail, setGlobalDetail] = useState("");
 
-  const [existingTicket, setExistingTicket] = useState<ExistingTicket | null>(
-    null,
-  );
+  const [existingCase, setExistingCase] = useState<ExistingCase | null>(null);
+  const [platform, setPlatform] = useState<string>("");
   const [refundAmount, setRefundAmount] = useState(0);
   const [currency, setCurrency] = useState("USD");
-  const [vendor, setVendor] = useState<string>("");
   const [customerName, setCustomerName] = useState<string>("");
   const [productTitle, setProductTitle] = useState<string>("");
 
@@ -113,9 +168,17 @@ export default function CustomerPage() {
   const [streaming, setStreaming] = useState(false);
   const [submittingRefund, setSubmittingRefund] = useState(false);
   const [conversationId, setConversationId] = useState<string>("");
-  const [endReason, setEndReason] = useState<"refund" | "resolved" | null>(
-    null,
-  );
+  /**
+   * Who is answering. Derived from the conversation id rather than drawn at
+   * random, so the server re-derives the same person for the system prompt and
+   * the handover email without us having to send it along.
+   */
+  const [agent, setAgent] = useState<SupportAgent>(DEFAULT_AGENT);
+  const [endReason, setEndReason] = useState<
+    "escalated" | "refund" | "resolved" | null
+  >(null);
+  const [caseReference, setCaseReference] = useState<string>("");
+  const [handover, setHandover] = useState<Handover | null>(null);
   const [offerClose, setOfferClose] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
 
@@ -128,63 +191,61 @@ export default function CustomerPage() {
     });
   }, [messages, phase, sending]);
 
-  async function handleReceiptSubmit(e: FormEvent) {
+  async function handleEmailSubmit(e: FormEvent) {
     e.preventDefault();
     setGlobalError("");
     setGlobalDetail("");
-    const trimmed = receipt.trim();
-    if (trimmed.length < 4) {
-      setReceiptError("Receipt must be at least 4 characters.");
+    const trimmed = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(trimmed)) {
+      setEmailError("Please enter a valid email address.");
       return;
     }
-    setReceiptError("");
+    setEmailError("");
     setLoading(true);
 
     try {
-      const ticketRes = await fetch("/api/check-ticket", {
+      // One request: the server looks for a purchase made with this address.
+      // Not finding one is fine — support still opens, just without an order
+      // attached.
+      const res = await fetch("/api/lookup-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ receipt: trimmed }),
+        body: JSON.stringify({ email: trimmed }),
       });
-      const ticketData = await ticketRes.json();
-      if (!ticketRes.ok) {
-        setGlobalError(ticketData.error ?? "Something went wrong.");
-        if (ticketData.detail) setGlobalDetail(ticketData.detail);
+      const data = await res.json();
+
+      if (!res.ok || !data.found) {
+        setGlobalError(data.error ?? "We couldn't start your request.");
+        if (data.detail) setGlobalDetail(data.detail);
         return;
       }
 
-      if (ticketData.hasOpenTicket) {
-        setExistingTicket(ticketData.ticket);
+      setEmail(trimmed);
+      setCaseKey(data.caseKey ?? trimmed);
+      setOrderNumber(data.orderId ?? null);
+      setPlatform(data.platform ?? "");
+      setRefundAmount(data.refundAmount ?? 0);
+      setCurrency(data.currency ?? "USD");
+      setProductTitle(data.productTitle ?? "");
+
+      if (data.existingCase) {
+        setExistingCase(data.existingCase);
         setPhase("existing");
         return;
       }
 
-      const refundRes = await fetch("/api/refund-amount", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ receipt: trimmed }),
-      });
-      const refundData = await refundRes.json();
-      if (!refundRes.ok) {
-        setGlobalError(refundData.error ?? "Could not fetch refund amount.");
-        if (refundData.detail) setGlobalDetail(refundData.detail);
-        return;
-      }
-
-      setRefundAmount(refundData.refundAmount ?? 0);
-      setCurrency(refundData.currency ?? "USD");
-      setVendor(refundData.vendor ?? "");
-      const firstName: string = refundData.firstName ?? "";
+      const firstName: string = data.firstName ?? "";
       setCustomerName(firstName);
-      setProductTitle(refundData.productTitle ?? "");
-      setConversationId(
+      const newConversationId =
         typeof crypto !== "undefined" && "randomUUID" in crypto
           ? crypto.randomUUID()
-          : `c-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-      );
+          : `c-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      setConversationId(newConversationId);
+      const assigned = pickAgent(newConversationId);
+      setAgent(assigned);
       const greeting = firstName
-        ? `Hi ${firstName}, I'm ${AGENT_NAME} from support. How can I help you today?`
-        : `Hi, I'm ${AGENT_NAME} from support. How can I help you today?`;
+        ? `Hi ${firstName}, I'm ${assigned.name} from support. How can I help you today?`
+        : `Hi, I'm ${assigned.name} from support. How can I help you today?`;
       setMessages([
         {
           role: "assistant",
@@ -200,35 +261,59 @@ export default function CustomerPage() {
     }
   }
 
-  async function triggerRefund(receiptForRefund: string) {
+  /**
+   * Retention failed — a person takes the conversation over. No money moves.
+   * The server also emails the customer so they can reach that person directly.
+   */
+  async function triggerEscalation(keyToEscalate: string, urgent: boolean) {
     setSubmittingRefund(true);
     try {
-      const res = await fetch("/api/create-refund", {
+      const res = await fetch("/api/escalate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ receipt: receiptForRefund }),
+        body: JSON.stringify({
+          caseKey: keyToEscalate,
+          email,
+          platform,
+          conversationId,
+          urgent,
+        }),
       });
       const data = await res.json();
+      // 409 = the server's own gate says retention isn't exhausted yet. The
+      // agent jumped the gun; stay in the chat rather than showing the customer
+      // an error for something that isn't their problem.
+      if (res.status === 409) return;
       if (!res.ok) {
-        setGlobalError(data.error ?? "Could not submit refund request.");
+        setGlobalError(data.error ?? "Could not hand this over.");
         if (data.detail) setGlobalDetail(data.detail);
         return;
       }
-      setEndReason("refund");
+      setCaseReference(data.reference ?? "");
+      if (data.supportEmail) {
+        setHandover({
+          supportEmail: data.supportEmail,
+          reference: data.reference ?? "",
+          agentName: data.agentName ?? agent.name,
+          orderId: data.orderId ?? null,
+          productTitle: data.productTitle ?? null,
+        });
+      }
+      setEndReason("escalated");
       setPhase("submitted");
     } catch {
-      setGlobalError("Network error while submitting refund.");
+      setGlobalError("Network error while handing this over.");
     } finally {
       setSubmittingRefund(false);
     }
   }
 
-  async function triggerResolve(receiptForResolve: string) {
+  async function triggerResolve(keyToResolve: string) {
     try {
       await fetch("/api/resolve-conversation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ receipt: receiptForResolve }),
+        body: JSON.stringify({ caseKey: keyToResolve, platform }),
       });
     } catch {
       /* non-blocking — UI still closes the conversation */
@@ -263,7 +348,10 @@ export default function CustomerPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           conversationId,
-          receipt: receipt.trim(),
+          platform,
+          caseKey,
+          orderId: orderNumber,
+          email,
           refundAmount,
           currency,
           messages: payloadMessages,
@@ -272,7 +360,7 @@ export default function CustomerPage() {
 
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
-        setGlobalError(data.error ?? "Maya is unavailable right now.");
+        setGlobalError(data.error ?? `${agent.name} is unavailable right now.`);
         setSending(false);
         setStreaming(false);
         return;
@@ -315,22 +403,31 @@ export default function CustomerPage() {
         try {
           const parsed = JSON.parse(match[0]) as {
             action?: string;
+            order?: string;
             receipt?: string;
+            urgent?: boolean;
           };
-          const r = parsed.receipt || receipt.trim();
-          if (parsed.action === "create_refund") {
-            await triggerRefund(r);
+          // The model echoes back whatever case key we gave it; fall back to
+          // ours rather than trusting a value it may have mangled.
+          const target = parsed.order || parsed.receipt || caseKey;
+          if (
+            parsed.action === "escalate_to_human" ||
+            parsed.action === "create_refund"
+          ) {
+            await triggerEscalation(target, parsed.urgent === true);
           } else if (parsed.action === "offer_close") {
-            setOfferClose(r);
+            setOfferClose(target);
           } else if (parsed.action === "resolve") {
-            await triggerResolve(r);
+            await triggerResolve(target);
           }
         } catch {
           /* ignore */
         }
       }
     } catch {
-      setGlobalError("Connection lost while talking to Maya. Please retry.");
+      setGlobalError(
+        `Connection lost while talking to ${agent.name}. Please retry.`,
+      );
     } finally {
       setSending(false);
       setStreaming(false);
@@ -338,20 +435,26 @@ export default function CustomerPage() {
   }
 
   function reset() {
-    setPhase("receipt");
-    setReceipt("");
-    setReceiptError("");
+    setPhase("identify");
+    setEmail("");
+    setEmailError("");
+    setCaseKey("");
+    setOrderNumber(null);
     setGlobalError("");
     setGlobalDetail("");
-    setExistingTicket(null);
+    setExistingCase(null);
+    setPlatform("");
     setRefundAmount(0);
     setCurrency("USD");
-    setVendor("");
     setCustomerName("");
     setProductTitle("");
+    setConversationId("");
+    setAgent(DEFAULT_AGENT);
     setMessages([]);
     setInput("");
     setEndReason(null);
+    setCaseReference("");
+    setHandover(null);
     setOfferClose(null);
     setClosing(false);
   }
@@ -364,7 +467,11 @@ export default function CustomerPage() {
   }
 
   return (
-    <PageShell brandName={BRAND_NAME} tagline="We're here to help">
+    <PageShell
+      brandName={BRAND_NAME}
+      tagline="We're here to help"
+      status="Support team online"
+    >
       <div className="space-y-6">
         <div className="animate-fade-up-soft delay-250">
           <Stepper steps={buildSteps(phase)} theme="light" />
@@ -389,26 +496,32 @@ export default function CustomerPage() {
         )}
 
         <div className="animate-fade-up-card delay-350">
-          {phase === "receipt" && (
+          {phase === "identify" && (
             <Card variant="glass" padding="lg">
               <h1 className="heading-glow font-serif text-[2rem] leading-tight">
                 Let&rsquo;s sort this out for you
               </h1>
               <p className="mt-2 text-sm text-neutral-500">
-                Enter your order receipt number below and we&rsquo;ll take care
-                of the rest.
+                Enter the email address you used at checkout. We&rsquo;ll pull
+                up your details and take it from there.
               </p>
 
-              <form onSubmit={handleReceiptSubmit} className="mt-7 space-y-5">
+              <form onSubmit={handleEmailSubmit} className="mt-7 space-y-5">
                 <Input
                   theme="light"
-                  label="Order Receipt Number"
-                  value={receipt}
-                  onChange={(e) => setReceipt(e.target.value)}
-                  placeholder="e.g. ABC12345"
-                  autoComplete="off"
+                  type="email"
+                  inputMode="email"
+                  label="Email address"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (emailError) setEmailError("");
+                  }}
+                  placeholder="you@example.com"
+                  autoComplete="email"
                   autoFocus
-                  error={receiptError || undefined}
+                  error={emailError || undefined}
+                  hint="Don't worry if you used a different address — we can still help."
                 />
 
                 <Button type="submit" size="lg" fullWidth loading={loading}>
@@ -416,16 +529,16 @@ export default function CustomerPage() {
                 </Button>
               </form>
 
-              <div className="mt-7 border-t border-emerald-100 pt-5 animate-fade-up-soft delay-600">
+              <div className="mt-7 border-t border-neutral-200 pt-5 animate-fade-up-soft delay-600">
                 <TrustBadges />
               </div>
             </Card>
           )}
 
-          {phase === "existing" && existingTicket && (
+          {phase === "existing" && existingCase && (
             <Card variant="glass" padding="lg">
               <div className="flex items-start gap-3">
-                <span className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                <span className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary-600">
                   <svg
                     viewBox="0 0 24 24"
                     fill="none"
@@ -440,26 +553,27 @@ export default function CustomerPage() {
                 </span>
                 <div className="flex-1">
                   <h2 className="font-serif text-xl text-neutral-900">
-                    You already have a ticket open
+                    We&rsquo;re already on this one
                   </h2>
                   <p className="mt-1 text-sm text-neutral-500">
-                    Our team is already working on ticket{" "}
+                    Your request{" "}
                     <span className="font-semibold text-neutral-900">
-                      #{existingTicket.ticketId}
-                    </span>
-                    . We&rsquo;ll be in touch soon.
+                      #{existingCase.reference}
+                    </span>{" "}
+                    is already being handled. There&rsquo;s nothing else you
+                    need to do.
                   </p>
                 </div>
               </div>
 
-              <dl className="mt-5 grid grid-cols-1 gap-3 rounded-xl border border-emerald-100 bg-emerald-50/40 p-4 text-sm sm:grid-cols-3">
+              <dl className="mt-5 grid grid-cols-1 gap-3 rounded-xl border border-primary-100 bg-primary-50/60 p-4 text-sm sm:grid-cols-3">
                 <div>
                   <dt className="text-xs uppercase tracking-[0.1em] text-neutral-400">
                     Status
                   </dt>
                   <dd className="mt-1.5">
                     <Badge variant="info">
-                      {existingTicket.status || "Open"}
+                      {existingCase.status || "Open"}
                     </Badge>
                   </dd>
                 </div>
@@ -468,7 +582,7 @@ export default function CustomerPage() {
                     Type
                   </dt>
                   <dd className="mt-1.5 font-medium text-neutral-800">
-                    {existingTicket.type || "—"}
+                    {existingCase.type || "—"}
                   </dd>
                 </div>
                 <div>
@@ -476,7 +590,7 @@ export default function CustomerPage() {
                     Opened
                   </dt>
                   <dd className="mt-1.5 font-medium text-neutral-800">
-                    {existingTicket.openedDate || "—"}
+                    {existingCase.openedDate || "—"}
                   </dd>
                 </div>
               </dl>
@@ -488,7 +602,7 @@ export default function CustomerPage() {
                   onClick={reset}
                   fullWidth
                 >
-                  Check a different order
+                  Use a different email
                 </Button>
               </div>
             </Card>
@@ -496,43 +610,42 @@ export default function CustomerPage() {
 
           {phase === "chat" && (
             <Card variant="glass" padding="none" className="overflow-hidden">
-              <div className="flex items-center justify-between gap-3 border-b border-emerald-100 px-5 py-4">
-                <div className="flex items-center gap-3">
-                  <span className="maya-avatar" aria-hidden="true">
-                    {AGENT_INITIAL}
-                    <span className="maya-online-dot" aria-hidden="true" />
-                  </span>
-                  <div>
-                    <p className="text-sm font-semibold text-neutral-900">
-                      {AGENT_NAME}
-                    </p>
-                    <p className="text-xs text-neutral-400">
-                      Support agent &middot; usually replies instantly
-                    </p>
-                  </div>
+              {/* No close/dismiss control here on purpose: once the chat is
+                  open, the way out is through the conversation — the agent's
+                  close offer, or a handover. */}
+              <div className="flex items-center gap-3 border-b border-neutral-200/80 bg-gradient-to-b from-white to-primary-50/60 px-5 py-4">
+                <AgentAvatar agent={agent} size="md" showStatus />
+                <div>
+                  <p className="text-sm font-semibold leading-tight text-neutral-900">
+                    {agent.name}
+                  </p>
+                  {/* Availability stays green — it reports a live state, so it
+                      should not blend into the blue brand chrome. */}
+                  <p className="mt-0.5 flex items-center gap-1.5 text-xs text-emerald-700">
+                    <span
+                      className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500"
+                      aria-hidden="true"
+                    />
+                    {sending ? "Typing…" : "Online now"}
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={reset}
-                  className="rounded-full px-3 py-1.5 text-xs font-medium text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
-                >
-                  Close
-                </button>
               </div>
 
               <div className="px-5 pb-4 pt-4">
-                <div className="rounded-xl border border-emerald-100 bg-[#f0fdf4] px-5 py-4">
-                  <p className="font-serif text-lg text-emerald-900">
+                <div className="rounded-xl border border-primary-100 bg-primary-50 px-5 py-4">
+                  <p className="font-serif text-lg text-primary-900">
                     {customerName ? `Hi ${customerName}!` : "Hi there!"}
                   </p>
-                  <p className="mt-0.5 text-xs text-emerald-700">
-                    We found your order. Here&rsquo;s a quick summary.
+                  <p className="mt-0.5 text-xs text-primary-700">
+                    {productTitle
+                      ? "We found your order. Here's a quick summary."
+                      : "Tell me what's going on and I'll help you sort it out."}
                   </p>
 
-                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                  <dl className="mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-2 text-xs">
                     {productTitle && (
-                      <div className="col-span-2">
-                        <dt className="text-[10px] font-medium uppercase tracking-[0.08em] text-neutral-400">
+                      <div className="w-full">
+                        <dt className="text-[10px] font-medium uppercase tracking-[0.08em] text-primary-700/70">
                           Product
                         </dt>
                         <dd className="mt-0.5 text-sm font-medium text-neutral-800">
@@ -540,67 +653,101 @@ export default function CustomerPage() {
                         </dd>
                       </div>
                     )}
-                    <div>
-                      <dt className="text-[10px] font-medium uppercase tracking-[0.08em] text-neutral-400">
-                        Receipt
+                    <div className="min-w-0">
+                      <dt className="text-[10px] font-medium uppercase tracking-[0.08em] text-primary-700/70">
+                        Email
                       </dt>
-                      <dd className="mt-0.5 text-sm font-medium text-neutral-700">
-                        {receipt}
+                      <dd className="mt-0.5 truncate text-sm font-medium text-neutral-700">
+                        {email}
                       </dd>
                     </div>
-                    <div>
-                      <dt className="text-[10px] font-medium uppercase tracking-[0.08em] text-neutral-400">
-                        Order total
-                      </dt>
-                      <dd className="mt-0.5 text-sm font-medium text-neutral-700">
-                        {formatMoney(refundAmount, currency)}
-                      </dd>
-                    </div>
+                    {/* Only shown when the address actually matched a purchase —
+                        printing a blank "Order" line reads as an error. */}
+                    {orderNumber && (
+                      <div>
+                        <dt className="text-[10px] font-medium uppercase tracking-[0.08em] text-primary-700/70">
+                          Order
+                        </dt>
+                        <dd className="mt-0.5 font-mono text-sm font-medium text-neutral-700">
+                          {orderNumber}
+                        </dd>
+                      </div>
+                    )}
+
+                    {/*
+                      Order total — hidden on purpose.
+                      Showing the amount puts a number in front of a customer who
+                      is deciding whether to ask for it back, which works against
+                      retention. It is also meaningless in handoff mode, where no
+                      store is connected and the value is always 0.
+                      To bring it back, uncomment this block.
+
+                    {refundAmount > 0 && (
+                      <div>
+                        <dt className="text-[10px] font-medium uppercase tracking-[0.08em] text-primary-700/70">
+                          Order total
+                        </dt>
+                        <dd className="mt-0.5 text-sm font-medium text-neutral-700">
+                          {formatMoney(refundAmount, currency)}
+                        </dd>
+                      </div>
+                    )}
+                    */}
                   </dl>
                 </div>
               </div>
 
               <div
                 ref={scrollerRef}
-                className="space-y-4 overflow-y-auto px-5 py-4"
-                style={{ maxHeight: "380px", minHeight: "220px" }}
+                className="chat-scroller overflow-y-auto px-5 py-4"
+                // Grows with the viewport instead of a fixed 380px, so a tall
+                // window shows more history and a phone doesn't get a stub.
+                style={{ height: "clamp(260px, 46vh, 460px)" }}
               >
-                {messages.map((m, i) => (
-                  <ChatBubble
-                    key={i}
-                    role={m.role}
-                    timestamp={m.timestamp}
-                    agentInitial={AGENT_INITIAL}
-                    theme="light"
-                  >
-                    {stripAction(m.content) || (
-                      <span className="text-neutral-300">…</span>
-                    )}
-                  </ChatBubble>
-                ))}
+                {messages.map((m, i) => {
+                  const previous = messages[i - 1];
+                  const grouped = previous?.role === m.role;
+                  // One timestamp per turn, on the last bubble of the group.
+                  const showTime = messages[i + 1]?.role !== m.role;
+                  return (
+                    <ChatBubble
+                      key={i}
+                      role={m.role}
+                      timestamp={showTime ? m.timestamp : undefined}
+                      avatar={<AgentAvatar agent={agent} />}
+                      theme="light"
+                      grouped={grouped}
+                    >
+                      {stripAction(m.content) || (
+                        <span className="text-neutral-300">…</span>
+                      )}
+                    </ChatBubble>
+                  );
+                })}
 
                 {streaming && (
                   <ChatBubble
                     role="assistant"
-                    agentInitial={AGENT_INITIAL}
+                    avatar={<AgentAvatar agent={agent} />}
                     typing
                     theme="light"
+                    grouped={messages[messages.length - 1]?.role === "assistant"}
                   />
                 )}
 
                 {submittingRefund && (
-                  <div className="flex items-center gap-2 pl-10 text-xs text-neutral-500">
+                  <div className="mt-4 flex items-center gap-2.5 pl-[42px] text-xs text-primary-700">
                     <TypingIndicator
                       theme="light"
-                      label="Submitting refund request"
+                      label="Handing over to the team"
                     />
-                    <span>Submitting your refund request…</span>
+                    <span>Passing you to a colleague…</span>
                   </div>
                 )}
               </div>
 
               {offerClose && (
-                <div className="border-t border-emerald-100 bg-[#f0fdf4] px-4 py-3">
+                <div className="border-t border-emerald-100 bg-emerald-50 px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-xs text-emerald-800">
                       Tudo resolvido? Encerre o atendimento quando quiser.
@@ -637,15 +784,15 @@ export default function CustomerPage() {
 
               <form
                 onSubmit={sendMessage}
-                className="flex items-center gap-2 border-t border-neutral-200 bg-neutral-50 px-4 py-3"
+                className="flex items-center gap-2.5 border-t border-neutral-200/80 bg-gradient-to-b from-neutral-50/60 to-white px-4 py-3.5"
               >
                 <input
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder={`Message ${AGENT_NAME}…`}
+                  placeholder={`Message ${agent.name}…`}
                   disabled={sending || submittingRefund || phase !== "chat"}
-                  aria-label={`Message ${AGENT_NAME}`}
+                  aria-label={`Message ${agent.name}`}
                   className="chat-input-light flex-1"
                 />
                 <button
@@ -665,7 +812,7 @@ export default function CustomerPage() {
               <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center">
                 <svg
                   viewBox="0 0 64 64"
-                  className="h-16 w-16 text-emerald-500"
+                  className="h-16 w-16 text-emerald-600"
                   aria-hidden="true"
                 >
                   <circle
@@ -691,13 +838,71 @@ export default function CustomerPage() {
               <h1 className="heading-glow font-serif text-[2rem] leading-tight">
                 {endReason === "resolved"
                   ? "Support ticket closed"
-                  : "Refund request submitted"}
+                  : "Passed to our team"}
               </h1>
               <p className="mt-2 text-sm text-neutral-500">
                 {endReason === "resolved"
                   ? "Thanks for chatting with us — we hope everything goes great from here."
-                  : "Thanks for working through this with us — here's what happens next."}
+                  : "Thanks for your patience — here's what happens next."}
               </p>
+
+              {endReason !== "resolved" && caseReference && (
+                <div className="mt-5 flex justify-center">
+                  <span className="case-ref">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-3.5 w-3.5"
+                      aria-hidden="true"
+                    >
+                      <path d="M4 7h16M4 12h16M4 17h10" />
+                    </svg>
+                    Reference
+                    <span className="font-mono font-semibold tracking-tight text-primary-900">
+                      #{caseReference}
+                    </span>
+                  </span>
+                </div>
+              )}
+
+              {/* Opens the customer's own mail app with the message already
+                  written. Nothing is sent on their behalf, so there is no
+                  delivery step that can fail quietly. */}
+              {endReason !== "resolved" && handover && (
+                <div className="mt-6">
+                  <a
+                    href={buildHandoverMailto(handover, email)}
+                    className="btn-premium inline-flex h-[54px] w-full items-center justify-center gap-2 px-7 text-base"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-5 w-5"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="5" width="18" height="14" rx="2" />
+                      <path d="m3 7 9 6 9-6" />
+                    </svg>
+                    Message our team
+                  </a>
+                  <p className="mt-2.5 text-xs text-neutral-500">
+                    Opens your email app with everything already filled in — just
+                    hit send. It goes to{" "}
+                    <span className="font-medium text-neutral-700">
+                      {handover.supportEmail}
+                    </span>
+                    .
+                  </p>
+                </div>
+              )}
 
               <ol className="mx-auto mt-7 max-w-md space-y-3 text-left">
                 {(endReason === "resolved"
@@ -706,13 +911,13 @@ export default function CustomerPage() {
                       "If you need us again, just come back to this page anytime.",
                     ]
                   : [
-                      "Your refund request has been submitted to our billing provider.",
-                      "You'll see the amount back on your original payment method within 3–10 business days, depending on your bank.",
-                      "You don't need to ship anything back — we'll take care of everything on our side.",
+                      "A member of our team now has your conversation and your details.",
+                      "They'll review everything you told us and get back to you by email.",
+                      "You don't need to do anything else — and you don't need to ship anything back.",
                     ]
                 ).map((step, i) => (
                   <li key={i} className="flex items-start gap-3">
-                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-semibold text-emerald-700">
+                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-100 text-xs font-semibold text-primary-700">
                       {i + 1}
                     </span>
                     <span className="text-sm text-neutral-700">{step}</span>

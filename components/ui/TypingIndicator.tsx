@@ -20,7 +20,7 @@ export function TypingIndicator({
   return (
     <div
       role="status"
-      aria-label={label ?? "Maya is typing"}
+      aria-label={label ?? "Support is typing"}
       className={cn("inline-flex items-center gap-1.5", className)}
     >
       <span className={cn("typing-dot block rounded-full", size, dot)} />

@@ -7,16 +7,21 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const receipt = String(body.receipt ?? "").trim();
+    // The case key — an order id, or the customer's email when no purchase
+    // could be matched to it.
+    const caseKey = String(
+      body.caseKey ?? body.orderId ?? body.receipt ?? "",
+    ).trim();
+    const platform = String(body.platform ?? "").trim().toLowerCase() || null;
 
-    if (receipt.length < 4) {
+    if (caseKey.length < 4) {
       return NextResponse.json(
-        { error: "Receipt is required." },
+        { error: "Please start over from the beginning." },
         { status: 400 },
       );
     }
 
-    await markConversationOutcome(receipt, "resolved");
+    await markConversationOutcome(caseKey, "resolved", platform);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[resolve-conversation]", err);

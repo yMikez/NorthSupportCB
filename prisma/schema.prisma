@@ -13,6 +13,15 @@ enum Outcome {
   refund_issued
   refund_abandoned
   resolved
+  /// Agent could not retain the customer and handed the conversation to a human.
+  escalated
+}
+
+enum RequestKind {
+  /// Refund the agent approved; may be automatic or queued.
+  refund
+  /// Retention failed — a human has to take the conversation over.
+  handoff
 }
 
 enum Mood {
@@ -22,9 +31,21 @@ enum Mood {
   angry
 }
 
+enum RefundStatus {
+  pending
+  processed
+  failed
+  cancelled
+}
+
 model Conversation {
   id                 String    @id
-  receipt            String
+  /// Which platform the order came from: buygoods | digistore24 | jvzoo
+  platform           String?
+  /// The case key. The customer now identifies themselves by email, so this is
+  /// the resolved order/purchase/transaction id when their address matched a
+  /// mirrored purchase, and the email address itself when it did not.
+  orderId            String
   vendor             String?
   productTitle       String?
   customerEmail      String?
@@ -40,7 +61,8 @@ model Conversation {
   retentionAttempts  Int       @default(0)
   messages           Message[]
 
-  @@index([receipt])
+  @@index([orderId])
+  @@index([platform])
   @@index([vendor])
   @@index([startedAt])
   @@index([outcome])
@@ -57,4 +79,65 @@ model Message {
 
   @@index([conversationId])
   @@index([createdAt])
+}
+
+/// Local mirror of purchases, filled by each platform's webhook/IPN.
+/// For JVZoo (and BuyGoods until REST access exists) this is the only way to
+/// resolve an order id into customer + product data.
+model OrderRecord {
+  id            String    @id @default(cuid())
+  platform      String
+  orderId       String
+  vendor        String?
+  productId     String?
+  productTitle  String?
+  firstName     String?
+  lastName      String?
+  email         String?
+  amount        Decimal?  @db.Decimal(10, 2)
+  currency      String?
+  purchaseDate  DateTime?
+  status        String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([platform, orderId])
+  @@index([email])
+  @@index([platform])
+  @@index([purchaseDate])
+}
+
+/// Refunds the agent approved but that could not be issued through an API
+/// (JVZoo always; the others when their API is unavailable or unverified).
+/// The customer is told the refund is on its way either way — this queue is
+/// what a human works through in /admin/refunds.
+model RefundRequest {
+  id              String       @id @default(cuid())
+  /// What a human has to do with this row: issue a refund, or take over the chat.
+  kind            RequestKind  @default(refund)
+  /// Set when the agent escalated because of a hard exception (health reaction,
+  /// chargeback threat, our delivery failure) — work these first.
+  urgent          Boolean      @default(false)
+  /// "handoff" rows have no platform when the stores aren't wired up yet.
+  platform        String       @default("")
+  /// Case key — see Conversation.orderId. May hold an email address.
+  orderId         String
+  conversationId  String?
+  vendor          String?
+  productTitle    String?
+  customerName    String?
+  customerEmail   String?
+  amount          Decimal?     @db.Decimal(10, 2)
+  currency        String?
+  status          RefundStatus @default(pending)
+  /// Why it landed here (unsupported API, API error, …) and any operator note.
+  note            String?
+  createdAt       DateTime     @default(now())
+  processedAt     DateTime?
+
+  @@index([status])
+  @@index([kind])
+  @@index([platform])
+  @@index([createdAt])
+  @@index([orderId])
 }

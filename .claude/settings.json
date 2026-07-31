@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($out = npx next build 2>&1 | Out-String; \"EXIT=$LASTEXITCODE\"; if \\($LASTEXITCODE -ne 0\\) { $out } else { \"build ok\" })",
+      "PowerShell(Select-String -Path 'docs\\\\HOSTINGER.md' -Pattern 'SUPPORT_MODE|env|\\\\.env|Environment' -Context 3,6 | Select-Object -First 3 | ForEach-Object { $_.Context.PreContext + $_.Line + $_.Context.PostContext })",
+      "PowerShell(if \\(Test-Path docker-compose.yml\\) { Select-String -Path docker-compose.yml -Pattern 'env_file|environment|SUPPORT|RESEND' | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" } } else { \"sem docker-compose.yml\" })",
+      "PowerShell(Select-String -Path 'docs\\\\HOSTINGER.md','docs\\\\DEPLOY.md','README.md','docs\\\\GITHUB_ACTIONS.md' -Pattern 'thenorthscale' -ErrorAction SilentlyContinue | ForEach-Object { \"$\\($_.Filename\\):$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
+      "PowerShell(npm install nodemailer 2>&1)",
+      "PowerShell(npm install -D \"@types/nodemailer\" 2>&1)",
+      "PowerShell(node smtp-probe-temp.js)",
+      "PowerShell(\"--- arquivo temporario removido\")",
+      "WebFetch(domain:www.hostinger.com)",
+      "PowerShell(Get-Content .env.local | Where-Object { $_ -match '^\\(SUPPORT_EMAIL|SMTP_|EMAIL_FROM\\)' })",
+      "PowerShell(\"temporario removido\")",
+      "PowerShell(winget install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements --silent 2>&1)",
+      "Bash(grep -rIn -E \"sk-ant-|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN .*PRIVATE KEY|password[\\\\\"' ]*[:=][\\\\\"' ]*[^\\\\\"'\\\\\\\\s]{8,}\" --include=\"*.ts\" --include=\"*.tsx\" --include=\"*.mjs\" --include=\"*.json\" --include=\"*.md\" --include=\"*.yml\" --include=\"*.example\" .)",
+      "Bash(echo \"---exit $?\")",
+      "Bash(git rm *)",
+      "Bash(git add *)"
+    ]
+  }
+}

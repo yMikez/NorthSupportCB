@@ -3,36 +3,38 @@
 @tailwind utilities;
 
 :root {
-  --color-primary-50: #ecfdf5;
-  --color-primary-100: #d1fae5;
-  --color-primary-200: #a7f3d0;
-  --color-primary-400: #34d399;
-  --color-primary-500: #10b981;
-  --color-primary-600: #059669;
-  --color-primary-700: #047857;
-  --color-primary-900: #064e3b;
-  --color-primary-950: #052e16;
+  /* Trust blue — see tailwind.config.ts for why the ramp sits one step
+     darker than Tailwind's stock blue. */
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-200: #bfdbfe;
+  --color-primary-400: #60a5fa;
+  --color-primary-500: #2563eb;
+  --color-primary-600: #1d4ed8;
+  --color-primary-700: #1e40af;
+  --color-primary-900: #172554;
+  --color-primary-950: #0f1c3f;
 
-  --color-neutral-50: #fafaf9;
-  --color-neutral-100: #f5f5f4;
-  --color-neutral-200: #e7e5e4;
-  --color-neutral-400: #a8a29e;
-  --color-neutral-600: #57534e;
-  --color-neutral-800: #292524;
-  --color-neutral-900: #1c1917;
+  --color-neutral-50: #f8fafc;
+  --color-neutral-100: #f1f5f9;
+  --color-neutral-200: #e2e8f0;
+  --color-neutral-400: #94a3b8;
+  --color-neutral-600: #475569;
+  --color-neutral-800: #1e293b;
+  --color-neutral-900: #0f172a;
 
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
-  --color-info: #3b82f6;
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-error: #dc2626;
+  --color-info: #0284c7;
 
-  --color-ink: #111827;
-  --color-ink-deep: #0a0f0a;
+  --color-ink: #0f172a;
+  --color-ink-deep: #020617;
 
-  --color-bg-page: #f4fbf7;
-  --color-bg-admin: #f8faf8;
+  --color-bg-page: #f4f7fd;
+  --color-bg-admin: #f8fafc;
   --color-bg-surface: #ffffff;
-  --color-bg-subtle: #f0faf5;
+  --color-bg-subtle: #eff4fd;
 
   --radius-sm: 6px;
   --radius-md: 12px;
@@ -40,9 +42,9 @@
   --radius-xl: 24px;
   --radius-full: 9999px;
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.10), 0 4px 8px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 8px 24px rgba(15, 23, 42, 0.10), 0 4px 8px rgba(15, 23, 42, 0.04);
 }
 
 @layer base {
@@ -53,7 +55,7 @@
 
   body {
     background-color: var(--color-bg-page);
-    color: #1a2e22;
+    color: #1e293b;
     font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
       "Segoe UI", Roboto, sans-serif;
     line-height: 1.6;
@@ -87,8 +89,8 @@
   }
 
   ::selection {
-    background-color: rgba(16, 185, 129, 0.2);
-    color: #064e3b;
+    background-color: rgba(37, 99, 235, 0.18);
+    color: #172554;
   }
 
   .theme-admin ::selection {
@@ -105,11 +107,11 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(16, 185, 129, 0.25);
+    background: rgba(37, 99, 235, 0.25);
     border-radius: 2px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(16, 185, 129, 0.45);
+    background: rgba(37, 99, 235, 0.45);
   }
 }
 
@@ -130,8 +132,8 @@
     height: 600px;
     background: radial-gradient(
       circle,
-      rgba(16, 185, 129, 0.14),
-      rgba(16, 185, 129, 0) 70%
+      rgba(37, 99, 235, 0.13),
+      rgba(37, 99, 235, 0) 70%
     );
   }
   .mesh-blob--bl {
@@ -139,10 +141,12 @@
     left: -220px;
     width: 500px;
     height: 500px;
+    /* A cooler sky tint on the second blob keeps the wash from reading as one
+       flat colour without introducing a competing hue. */
     background: radial-gradient(
       circle,
-      rgba(5, 150, 105, 0.10),
-      rgba(5, 150, 105, 0) 70%
+      rgba(14, 165, 233, 0.10),
+      rgba(14, 165, 233, 0) 70%
     );
   }
 
@@ -152,7 +156,7 @@
     inset: 0;
     pointer-events: none;
     z-index: 0;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><circle cx='1' cy='1' r='1' fill='rgba(16,185,129,0.12)'/></svg>");
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><circle cx='1' cy='1' r='1' fill='rgba(37,99,235,0.12)'/></svg>");
     background-size: 24px 24px;
     mask-image: radial-gradient(
       ellipse at center,
@@ -171,17 +175,21 @@
   /* Clean surface card (light) */
   .glass-card {
     background: #ffffff;
-    border: 1px solid rgba(16, 185, 129, 0.18);
+    border: 1px solid rgba(37, 99, 235, 0.14);
     border-radius: 24px;
+    /* Layered shadow: a tight contact shadow for edge definition, a wide soft
+       one for lift, plus a faint blue tint so the card sits in the palette
+       instead of floating on neutral grey. */
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.9) inset,
-      0 4px 24px rgba(16, 185, 129, 0.07),
-      0 1px 4px rgba(0, 0, 0, 0.05);
+      0 1px 2px rgba(15, 23, 42, 0.05),
+      0 8px 20px -6px rgba(23, 37, 84, 0.09),
+      0 24px 48px -20px rgba(37, 99, 235, 0.16);
   }
 
   /* Heading accent */
   .heading-glow {
-    color: #064e3b;
+    color: #172554;
   }
 
   /* Brand accent line (under brand name) */
@@ -195,29 +203,79 @@
     animation: accent-line 400ms ease-out 200ms both;
   }
 
+  /* Brand mark — the headset badge in the page header. Reads as "support desk"
+     before a single word is parsed. */
+  .brand-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    color: #ffffff;
+    box-shadow:
+      0 6px 16px -4px rgba(37, 99, 235, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  }
+  .brand-mark svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* "We're online" strip under the brand name */
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 12px 4px 10px;
+    border-radius: 9999px;
+    background: rgba(5, 150, 105, 0.08);
+    border: 1px solid rgba(5, 150, 105, 0.2);
+    color: #047857;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+  .status-pill__dot {
+    position: relative;
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+    background: #059669;
+  }
+  .status-pill__dot::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 9999px;
+    border: 1.5px solid #059669;
+    animation: pulse-ring 2s ease-out infinite;
+  }
+
   /* Input (light variant) */
   .input-light {
     background: #ffffff;
-    border: 1.5px solid #e5e7eb;
+    border: 1.5px solid #e2e8f0;
     border-radius: 12px;
-    color: #111827;
+    color: #0f172a;
     padding: 14px 18px;
     font-size: 1rem;
     transition: all 200ms ease;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   }
   .input-light::placeholder {
-    color: #9ca3af;
+    color: #94a3b8;
   }
   .input-light:focus {
-    border-color: #10b981;
+    border-color: #2563eb;
     background: #ffffff;
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
     outline: none;
   }
   .input-light:disabled {
     opacity: 0.5;
-    background: #f9fafb;
+    background: #f8fafc;
   }
 
   /* Keep dark variant for backwards compat (admin, etc.) */
@@ -234,9 +292,9 @@
     color: rgba(255, 255, 255, 0.25);
   }
   .input-dark:focus {
-    border-color: #10b981;
-    background: rgba(16, 185, 129, 0.08);
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+    border-color: #2563eb;
+    background: rgba(37, 99, 235, 0.10);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
     outline: none;
   }
   .input-dark:disabled {
@@ -247,27 +305,27 @@
   .btn-premium {
     position: relative;
     overflow: hidden;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
     color: #ffffff;
     border-radius: 12px;
     font-weight: 600;
     letter-spacing: 0.01em;
     box-shadow:
-      0 4px 16px rgba(16, 185, 129, 0.30),
+      0 4px 16px rgba(37, 99, 235, 0.28),
       inset 0 1px 0 rgba(255, 255, 255, 0.15);
     transition: all 200ms ease;
   }
   .btn-premium:hover:not(:disabled) {
-    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
     box-shadow:
-      0 6px 24px rgba(16, 185, 129, 0.38),
+      0 6px 24px rgba(37, 99, 235, 0.36),
       inset 0 1px 0 rgba(255, 255, 255, 0.12);
     transform: translateY(-1px);
   }
   .btn-premium:active:not(:disabled) {
     transform: translateY(0);
     box-shadow:
-      0 2px 8px rgba(16, 185, 129, 0.25),
+      0 2px 8px rgba(37, 99, 235, 0.24),
       inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
   .btn-premium::after {
@@ -297,21 +355,21 @@
     gap: 6px;
     padding: 6px 14px 6px 8px;
     border-radius: 9999px;
-    background: rgba(16, 185, 129, 0.08);
-    border: 1px solid rgba(16, 185, 129, 0.22);
-    color: #065f46;
+    background: rgba(37, 99, 235, 0.06);
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    color: #1e40af;
     font-size: 13px;
     font-weight: 500;
     transition: all 200ms ease;
   }
   .trust-pill:hover {
-    background: rgba(16, 185, 129, 0.13);
-    border-color: rgba(16, 185, 129, 0.38);
+    background: rgba(37, 99, 235, 0.11);
+    border-color: rgba(37, 99, 235, 0.34);
   }
   .trust-pill svg {
     width: 14px;
     height: 14px;
-    color: #059669;
+    color: #2563eb;
   }
 
   /* Stepper (light — via Tailwind classes in component) */
@@ -321,37 +379,68 @@
     color: rgba(255, 255, 255, 0.45);
   }
   .step-circle-active {
-    background: #10b981;
-    border: 2px solid #10b981;
+    background: #2563eb;
+    border: 2px solid #2563eb;
     color: #ffffff;
-    box-shadow: 0 0 16px rgba(16, 185, 129, 0.4);
+    box-shadow: 0 0 16px rgba(37, 99, 235, 0.4);
   }
   .step-circle-complete {
     background: transparent;
-    border: 2px solid #10b981;
-    color: #10b981;
+    border: 2px solid #2563eb;
+    color: #60a5fa;
   }
   .step-line-dark {
     background: rgba(255, 255, 255, 0.1);
   }
   .step-line-dark-complete {
-    background: #10b981;
+    background: #2563eb;
   }
 
   /* Chat bubbles (light) */
   .bubble-assistant {
-    background: #f0fdf4;
-    border: 1px solid #d1fae5;
-    color: #1a2e22;
-    border-radius: 18px 18px 18px 4px;
-    padding: 14px 18px;
+    background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    border: 1px solid #e2e8f0;
+    color: #1e293b;
+    border-radius: 18px 18px 18px 5px;
+    padding: 13px 17px;
+    line-height: 1.55;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   }
   .bubble-user {
-    background: linear-gradient(135deg, #10b981, #059669);
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
     color: #ffffff;
-    border-radius: 18px 18px 4px 18px;
-    padding: 14px 18px;
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
+    border-radius: 18px 18px 5px 18px;
+    padding: 13px 17px;
+    line-height: 1.55;
+    box-shadow:
+      0 1px 2px rgba(23, 37, 84, 0.22),
+      0 4px 12px -2px rgba(37, 99, 235, 0.3);
+  }
+
+  /* Consecutive bubbles from the same speaker read as one turn. */
+  .bubble-assistant.is-grouped {
+    border-top-left-radius: 6px;
+  }
+  .bubble-user.is-grouped {
+    border-top-right-radius: 6px;
+  }
+
+  /* Soft fade at the top of the transcript so scrolled-away messages
+     dissolve instead of being sliced by the container edge. */
+  .chat-scroller {
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      black 18px,
+      black 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      black 18px,
+      black 100%
+    );
+    scroll-behavior: smooth;
   }
 
   /* Keep dark variants */
@@ -363,50 +452,39 @@
     padding: 14px 18px;
   }
   .bubble-user-dark {
-    background: linear-gradient(135deg, #10b981, #059669);
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
     color: #ffffff;
     border-radius: 18px 18px 4px 18px;
     padding: 14px 18px;
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
   }
 
-  /* Maya avatar with pulse ring */
-  .maya-avatar {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 9999px;
-    background: linear-gradient(135deg, #10b981, #059669);
-    color: #ffffff;
-    font-weight: 600;
-    font-size: 0.95rem;
-  }
-  .maya-avatar::before {
+  /* Agent avatar — the pulse ring only appears on the chat header instance,
+     so a transcript of twenty bubbles does not animate twenty rings. */
+  .agent-avatar--status::before {
     content: "";
     position: absolute;
     inset: 0;
     border-radius: 9999px;
-    border: 2px solid #10b981;
+    border: 2px solid #2563eb;
     animation: pulse-ring 2s ease-out infinite;
   }
-  .maya-online-dot {
+  /* Availability dot stays green: it reports a state, not the brand. */
+  .agent-online-dot {
     position: absolute;
     right: -1px;
     bottom: -1px;
     width: 10px;
     height: 10px;
     border-radius: 9999px;
-    background: #10b981;
+    background: #059669;
     border: 2px solid #ffffff;
   }
 
   /* Refund amount pill inside chat card (light) */
   .refund-pill {
-    background: #f0fdf4;
-    border: 1px solid #d1fae5;
+    background: #eff6ff;
+    border: 1px solid #dbeafe;
     border-radius: 12px;
     padding: 16px 20px;
   }
@@ -414,24 +492,24 @@
   /* Chat input (light) */
   .chat-input-light {
     background: #ffffff;
-    border: 1.5px solid #e5e7eb;
+    border: 1.5px solid #e2e8f0;
     border-radius: 14px;
-    color: #111827;
+    color: #0f172a;
     padding: 12px 16px;
     font-size: 0.95rem;
     transition: all 200ms ease;
   }
   .chat-input-light::placeholder {
-    color: #9ca3af;
+    color: #94a3b8;
   }
   .chat-input-light:focus {
-    border-color: #10b981;
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
     outline: none;
   }
   .chat-input-light:disabled {
     opacity: 0.5;
-    background: #f9fafb;
+    background: #f8fafc;
   }
 
   /* Chat input (dark) */
@@ -448,8 +526,8 @@
     color: rgba(255, 255, 255, 0.3);
   }
   .chat-input-dark:focus {
-    border-color: #10b981;
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22);
     outline: none;
   }
   .chat-input-dark:disabled {
@@ -458,38 +536,59 @@
 
   /* Chat send square */
   .chat-send {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    background: linear-gradient(135deg, #10b981, #059669);
+    width: 46px;
+    height: 46px;
+    flex-shrink: 0;
+    border-radius: 13px;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
     color: #ffffff;
-    transition: all 200ms ease;
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.20);
+    transition:
+      transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      box-shadow 200ms ease,
+      opacity 200ms ease;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.22);
   }
   .chat-send:hover:not(:disabled) {
-    transform: scale(1.05);
-    box-shadow: 0 4px 16px rgba(16, 185, 129, 0.35);
+    transform: scale(1.06);
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.35);
+  }
+  .chat-send:active:not(:disabled) {
+    transform: scale(0.96);
   }
   .chat-send:disabled {
-    opacity: 0.5;
+    opacity: 0.35;
+    box-shadow: none;
+  }
+
+  /* Reference chip on the confirmation screen */
+  .case-ref {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 14px;
+    border-radius: 9999px;
+    background: rgba(37, 99, 235, 0.07);
+    border: 1px solid rgba(37, 99, 235, 0.2);
+    font-size: 0.8125rem;
+    color: #1e40af;
   }
 
   /* Admin stat card left-border accents */
   .stat-accent-open {
-    border-left: 3px solid #10b981;
+    border-left: 3px solid #2563eb;
   }
   .stat-accent-refund {
-    border-left: 3px solid #f59e0b;
+    border-left: 3px solid #d97706;
   }
   .stat-accent-resolved {
-    border-left: 3px solid #3b82f6;
+    border-left: 3px solid #059669;
   }
 
   /* Mark-returned button (admin) */
   .btn-outline-emerald {
     background: transparent;
-    border: 1.5px solid #10b981;
-    color: #059669;
+    border: 1.5px solid #2563eb;
+    color: #1d4ed8;
     border-radius: 9999px;
     padding: 6px 14px;
     font-size: 0.8125rem;
@@ -497,8 +596,8 @@
     transition: all 150ms ease;
   }
   .btn-outline-emerald:hover:not(:disabled) {
-    background: #ecfdf5;
-    border-color: #059669;
+    background: #eff6ff;
+    border-color: #1d4ed8;
   }
 }
 

@@ -19,10 +19,10 @@ const styles: Record<
   { accent: string; bg: string; text: string; iconColor: string; icon: ReactNode }
 > = {
   success: {
-    accent: "border-l-primary-500",
-    bg: "bg-primary-50",
-    text: "text-primary-900",
-    iconColor: "text-primary-600",
+    accent: "border-l-success",
+    bg: "bg-emerald-50",
+    text: "text-emerald-900",
+    iconColor: "text-success",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
         <circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.12" />
@@ -54,10 +54,10 @@ const styles: Record<
     ),
   },
   info: {
-    accent: "border-l-info",
-    bg: "bg-blue-50",
-    text: "text-blue-900",
-    iconColor: "text-info",
+    accent: "border-l-primary-500",
+    bg: "bg-primary-50",
+    text: "text-primary-900",
+    iconColor: "text-primary-600",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
         <circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.12" />

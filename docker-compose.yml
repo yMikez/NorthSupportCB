@@ -28,12 +28,30 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      CLICKBANK_API_KEY_READ: ${CLICKBANK_API_KEY_READ}
-      CLICKBANK_API_KEY_WRITE: ${CLICKBANK_API_KEY_WRITE}
-      CLICKBANK_VENDORS: ${CLICKBANK_VENDORS}
       ADMIN_SECRET: ${ADMIN_SECRET}
+      # handoff = no store integration; the agent escalates to a human.
+      # api     = orders resolved through the platform adapters, refunds issued.
+      SUPPORT_MODE: ${SUPPORT_MODE:-handoff}
+      # Nothing is emailed from the app. This is the address the handover
+      # screen points the customer at, via a mailto: link they send themselves.
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-suporte@northsupplements.online}
+      MOCK_AI: ${MOCK_AI:-false}
+      PLATFORMS: ${PLATFORMS:-buygoods,digistore24,jvzoo}
+      WEBHOOK_SHARED_SECRET: ${WEBHOOK_SHARED_SECRET}
+      DIGISTORE24_API_KEY: ${DIGISTORE24_API_KEY}
+      DIGISTORE24_ENABLE_API_REFUND: ${DIGISTORE24_ENABLE_API_REFUND:-false}
+      BUYGOODS_API_BASE: ${BUYGOODS_API_BASE}
+      BUYGOODS_API_KEY: ${BUYGOODS_API_KEY}
+      BUYGOODS_ENABLE_API_REFUND: ${BUYGOODS_ENABLE_API_REFUND:-false}
+      JVZOO_SECRET_KEY: ${JVZOO_SECRET_KEY}
+      JVZOO_AMOUNT_IN_CENTS: ${JVZOO_AMOUNT_IN_CENTS:-true}
+      PRODUCT_VENDOR_MAP: ${PRODUCT_VENDOR_MAP}
       MOCK_MODE: ${MOCK_MODE:-false}
       NEXT_PUBLIC_MOCK_MODE: ${NEXT_PUBLIC_MOCK_MODE:-false}
+    volumes:
+      # Edit knowledge/*.md on the host and the agent picks it up on the next
+      # conversation — no rebuild needed.
+      - ./knowledge:/app/knowledge:ro
     depends_on:
       postgres:
         condition: service_healthy

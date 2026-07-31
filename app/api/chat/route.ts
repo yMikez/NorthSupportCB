@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { streamClaudeResponse, type ChatMessage } from "@/lib/claude";
 import { getClientIp, rateLimit } from "@/lib/rateLimit";
-import { getOrder, ClickBankError } from "@/lib/clickbank";
+import { getAdapter, isPlatformId } from "@/lib/platforms";
+import { isHandoffMode } from "@/lib/mode";
+import { isValidEmail, normalizeEmail } from "@/lib/email";
+import { pickAgent } from "@/lib/agents";
+import { countRefundDemands, detectHardException } from "@/lib/retention";
 import { loadKnowledge } from "@/lib/knowledge";
 import {
   ensureConversation,
@@ -28,7 +32,11 @@ export async function POST(req: Request) {
 
   let payload: {
     conversationId?: string;
-    receipt?: string;
+    platform?: string;
+    /** Order id when one was resolved, the customer's email otherwise. */
+    caseKey?: string;
+    orderId?: string;
+    email?: string;
     refundAmount?: number;
     currency?: string;
     messages?: ChatMessage[];
@@ -40,14 +48,34 @@ export async function POST(req: Request) {
   }
 
   const conversationId = String(payload.conversationId ?? "").trim();
-  const receipt = String(payload.receipt ?? "").trim();
+  const orderId = String(payload.orderId ?? "").trim() || null;
+  const typedEmail = String(payload.email ?? "").trim();
+  const caseKey = String(payload.caseKey ?? "").trim() || orderId || typedEmail;
+  const platformParam = String(payload.platform ?? "").trim().toLowerCase();
   const refundAmount = Number(payload.refundAmount ?? 0);
   const currency = String(payload.currency ?? "USD");
   const messages = Array.isArray(payload.messages) ? payload.messages : [];
 
-  if (receipt.length < 4) {
+  if (!caseKey || caseKey.length < 4) {
     return NextResponse.json(
-      { error: "Receipt is required." },
+      { error: "Please start over from the beginning." },
+      { status: 400 },
+    );
+  }
+  if (typedEmail && !isValidEmail(typedEmail)) {
+    return NextResponse.json(
+      { error: "Please enter a valid email address." },
+      { status: 400 },
+    );
+  }
+
+  // In handoff mode no store is wired up, so there is no platform to validate.
+  const platform: string | null = isPlatformId(platformParam)
+    ? platformParam
+    : null;
+  if (!platform && !isHandoffMode()) {
+    return NextResponse.json(
+      { error: "Unknown platform. Please start over." },
       { status: 400 },
     );
   }
@@ -73,27 +101,48 @@ export async function POST(req: Request) {
     )
     .map((m) => ({ role: m.role, content: m.content }));
 
+  // Re-fetch the order server-side: never trust customer/product data that
+  // came back through the browser. Skipped in handoff mode — there is nothing
+  // to fetch from, and loadKnowledge falls back to every product file.
   let vendor: string | null = null;
   let productTitle: string | null = null;
   let customerName: string | null = null;
-  let customerEmail: string | null = null;
-  try {
-    const order = await getOrder(receipt);
-    vendor = order.vendor ?? null;
-    productTitle = order.productTitle ?? null;
-    customerName = order.firstName ?? null;
-    customerEmail = order.email ?? null;
-  } catch (err) {
-    if (!(err instanceof ClickBankError) || err.status !== 404) {
-      console.error("[chat] getOrder failed", err);
+  // The address the customer typed wins over the one on the purchase: it is
+  // where they expect the handover email, and it is the one they can read.
+  let customerEmail: string | null = typedEmail
+    ? normalizeEmail(typedEmail)
+    : null;
+  if (platform && orderId) {
+    try {
+      const order = await getAdapter(platform)?.getOrder(orderId);
+      if (order) {
+        vendor = order.vendor;
+        productTitle = order.productTitle;
+        customerName = order.firstName;
+        customerEmail = customerEmail ?? order.email;
+      }
+    } catch (err) {
+      console.error("[chat] order lookup failed", err);
     }
   }
 
-  const knowledge = await loadKnowledge(vendor);
+  const refundDemands = countRefundDemands(cleanMessages);
+  const hardException = detectHardException(cleanMessages);
+
+  // The gate is enforced by these two numbers, so make them visible when
+  // tuning the policy — otherwise an early escalation is impossible to debug.
+  console.log(
+    `[chat] ${conversationId.slice(-8)} demands=${refundDemands} hardException=${hardException} vendor=${vendor ?? "(none)"}`,
+  );
+
+  const knowledge = await loadKnowledge(vendor, platform);
 
   await ensureConversation({
     conversationId,
-    receipt,
+    platform,
+    // Conversation.orderId is the case key — see the column's comment in
+    // prisma/schema.prisma.
+    orderId: caseKey,
     vendor,
     productTitle,
     customerName,
@@ -114,12 +163,20 @@ export async function POST(req: Request) {
     const upstream = await streamClaudeResponse({
       knowledge: knowledge.combined,
       context: {
-        receipt,
+        // Re-derived from the conversation id rather than taken from the
+        // request: the browser cannot rename the agent mid-conversation.
+        agentName: pickAgent(conversationId).name,
+        caseRef: caseKey,
+        orderId,
+        customerEmail,
+        platform,
         refundAmount,
         currency,
         customerName,
         productTitle,
         vendor,
+        refundDemands,
+        hardException,
       },
       messages: cleanMessages,
     });

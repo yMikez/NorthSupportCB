@@ -1,4 +1,4 @@
-# GlycoPulse — product knowledge
+﻿# GlycoPulse — product knowledge
 
 ## Product
 - **Name:** GlycoPulse (also "Glyco Pulse")
@@ -50,7 +50,7 @@
 - 60-day money-back guarantee from shipping date.
 - We handle returns internally — customer does NOT ship anything back.
 
-## Cases to offer the refund immediately (besides anger)
+## Hard-exception cases for this product (refund immediately, no retention)
 - Adverse reaction.
 - Customer describes dangerous symptoms (hypoglycemia, frequent dizziness). Never try to retain — advise them to contact their doctor and offer the refund.
 - Customer says their doctor told them to stop.

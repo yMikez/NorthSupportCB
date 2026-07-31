@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { ClickBankError, createRefund, devDetail } from "@/lib/clickbank";
+import { devDetail, getAdapter, isPlatformId } from "@/lib/platforms";
 import { markConversationOutcome } from "@/lib/logging";
+import { processRefund } from "@/lib/refunds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,39 +9,45 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const receipt = String(body.receipt ?? "").trim();
+    const orderId = String(body.orderId ?? body.receipt ?? "").trim();
+    const platform = String(body.platform ?? "").trim().toLowerCase();
+    const conversationId = String(body.conversationId ?? "").trim() || null;
 
-    if (receipt.length < 4) {
+    if (orderId.length < 4) {
       return NextResponse.json(
-        { error: "Receipt is required." },
+        { error: "Order number is required." },
+        { status: 400 },
+      );
+    }
+    if (!isPlatformId(platform)) {
+      return NextResponse.json(
+        { error: "Unknown platform." },
         { status: 400 },
       );
     }
 
-    await createRefund(receipt);
-    await markConversationOutcome(receipt, "refund_issued");
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    if (err instanceof ClickBankError) {
-      // eslint-disable-next-line no-console
-      console.error("[create-refund]", err.status, err.body.slice(0, 500));
-      const msg =
-        err.status === 401
-          ? "Your ClickBank API key is not authorized. Please check CLICKBANK_API_KEY_WRITE."
-          : err.status === 403
-            ? "Your ClickBank API key is missing the required role (API Order Write Role)."
-            : err.status === 404
-              ? "Receipt not found. Please check the number and try again."
-              : "ClickBank rejected the refund request. Please contact support.";
+    const adapter = getAdapter(platform);
+    const order = await adapter?.getOrder(orderId);
+    if (!order) {
       return NextResponse.json(
-        { error: msg, detail: devDetail(err) },
-        { status: err.status === 404 ? 404 : 502 },
+        { error: "We couldn't find that order anymore. Please contact support." },
+        { status: 404 },
       );
     }
-    // eslint-disable-next-line no-console
+
+    // Never throws for platform reasons: anything the API can't do becomes a
+    // queued request for a human. See lib/refunds.ts.
+    const outcome = await processRefund(order, { conversationId });
+    await markConversationOutcome(orderId, "refund_issued", platform);
+
+    return NextResponse.json({ ok: true, mode: outcome.mode });
+  } catch (err) {
     console.error("[create-refund] unexpected", err);
     return NextResponse.json(
-      { error: "Could not submit refund request." },
+      {
+        error: "Could not submit refund request.",
+        detail: devDetail(err),
+      },
       { status: 500 },
     );
   }

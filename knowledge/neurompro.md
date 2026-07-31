@@ -1,4 +1,4 @@
-# NeuroMind Pro — product knowledge
+﻿# NeuroMind Pro — product knowledge
 
 ## Product
 - **Name:** NeuroMind Pro
@@ -49,6 +49,6 @@
 - 60-day money-back guarantee from shipping date.
 - We handle returns internally — customer does NOT ship anything back.
 
-## Cases to offer the refund immediately (besides anger)
+## Hard-exception cases for this product (refund immediately, no retention)
 - Adverse reaction.
 - Customer describes concerning cognitive symptoms that go beyond normal memory issues — never try to retain; encourage them to see a doctor.

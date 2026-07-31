@@ -1,4 +1,4 @@
-# Thermo Burn — product knowledge
+﻿# Thermo Burn — product knowledge
 
 ## Product
 - **Name:** Thermo Burn (sometimes labeled "Thermo Burn Pro")
@@ -50,6 +50,6 @@
 - 60-day money-back guarantee from shipping date.
 - We handle returns internally — customer does NOT ship anything back.
 
-## Cases to offer the refund immediately (besides anger)
+## Hard-exception cases for this product (refund immediately, no retention)
 - Adverse reaction (racing heart, severe insomnia, dizziness).
 - Customer reveals a heart condition or is on BP medication — never try to retain, suggest stopping and talking to a doctor.

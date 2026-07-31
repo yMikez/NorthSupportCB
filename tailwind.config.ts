@@ -5,39 +5,46 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Trust blue — the support-desk convention (Zendesk/Intercom/Freshdesk).
+        // The ramp is shifted one step darker than Tailwind's stock blue so that
+        // every existing `primary-500` surface clears 4.5:1 against white text.
         primary: {
-          50: "#ecfdf5",
-          100: "#d1fae5",
-          200: "#a7f3d0",
-          300: "#6ee7b7",
-          400: "#34d399",
-          500: "#10b981",
-          600: "#059669",
-          700: "#047857",
-          800: "#065f46",
-          900: "#064e3b",
-          950: "#052e16",
+          50: "#eff6ff",
+          100: "#dbeafe",
+          200: "#bfdbfe",
+          300: "#93c5fd",
+          400: "#60a5fa",
+          500: "#2563eb",
+          600: "#1d4ed8",
+          700: "#1e40af",
+          800: "#1e3a8a",
+          900: "#172554",
+          950: "#0f1c3f",
         },
+        // Slate rather than stone: a cool grey keeps the neutrals in the same
+        // temperature family as the blue instead of fighting it.
         neutral: {
-          50: "#fafaf9",
-          100: "#f5f5f4",
-          200: "#e7e5e4",
-          300: "#d6d3d1",
-          400: "#a8a29e",
-          500: "#78716c",
-          600: "#57534e",
-          700: "#44403c",
-          800: "#292524",
-          900: "#1c1917",
+          50: "#f8fafc",
+          100: "#f1f5f9",
+          200: "#e2e8f0",
+          300: "#cbd5e1",
+          400: "#94a3b8",
+          500: "#64748b",
+          600: "#475569",
+          700: "#334155",
+          800: "#1e293b",
+          900: "#0f172a",
         },
         ink: {
-          900: "#0a0f0a",
-          950: "#070b07",
+          900: "#0f172a",
+          950: "#020617",
         },
-        success: "#10b981",
-        warning: "#f59e0b",
-        error: "#ef4444",
-        info: "#3b82f6",
+        // Amber stays reserved for "needs attention" so it reads as a signal,
+        // never as decoration.
+        success: "#059669",
+        warning: "#d97706",
+        error: "#dc2626",
+        info: "#0284c7",
       },
       fontFamily: {
         sans: [
@@ -79,12 +86,12 @@ const config: Config = {
         sm: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
         md: "0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04)",
         lg: "0 8px 24px rgba(0,0,0,0.10), 0 4px 8px rgba(0,0,0,0.04)",
-        ring: "0 0 0 4px rgba(16, 185, 129, 0.12)",
+        ring: "0 0 0 4px rgba(37, 99, 235, 0.12)",
         glass:
-          "0 0 0 1px rgba(16,185,129,0.15), 0 32px 64px rgba(0,0,0,0.4), inset 0 0 80px rgba(16,185,129,0.06)",
-        "glow-sm": "0 0 16px rgba(16,185,129,0.5)",
-        "glow-md": "0 4px 24px rgba(16,185,129,0.4), inset 0 1px 0 rgba(255,255,255,0.1)",
-        "glow-lg": "0 8px 32px rgba(16,185,129,0.5)",
+          "0 0 0 1px rgba(37,99,235,0.15), 0 32px 64px rgba(0,0,0,0.4), inset 0 0 80px rgba(37,99,235,0.06)",
+        "glow-sm": "0 0 16px rgba(37,99,235,0.45)",
+        "glow-md": "0 4px 24px rgba(37,99,235,0.35), inset 0 1px 0 rgba(255,255,255,0.1)",
+        "glow-lg": "0 8px 32px rgba(37,99,235,0.45)",
       },
       keyframes: {
         "fade-in-up": {

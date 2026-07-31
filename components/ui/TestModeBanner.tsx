@@ -10,7 +10,7 @@ export function TestModeBanner() {
           aria-hidden="true"
           className="inline-block h-2 w-2 rounded-full bg-warning"
         />
-        Test mode — no real ClickBank or Anthropic calls are being made.
+        Test mode — no real sales-platform or Anthropic calls are being made.
         <span className="hidden sm:inline text-amber-800/80">
           Try receipts like <code className="font-mono">ABC123</code>,{" "}
           <code className="font-mono">OPEN123</code>, or{" "}
