@@ -15,14 +15,23 @@ npm run agents:photos -- --force               # a new face for everyone
 npm run agents:photos -- --only theo --force   # re-roll one agent
 ```
 
-**Look at every face before shipping it.** The generator draws from the full
-range of its training data, which includes children — two of the first eight
-faces pulled for this repo were kids. `--only <id> --force` re-rolls the ones
-that don't fit.
+**Look at every face before shipping it**, on two counts.
 
-The faces are also drawn independently of the names, so a pairing may read
-oddly. Re-roll the photo, or rename the agent in `lib/agents.ts` — whichever
-suits the desk you want to present.
+**Gender.** Every agent carries a `gender` in `lib/agents.ts` and the photo has
+to match it — a "Marcus" with a woman's face reads as a stock-image front, which
+is the one impression a support desk cannot afford. The script prints what each
+face has to be (`← must be male`) but cannot enforce it: the default generator
+takes no parameters and returns whatever it drew, so expect to re-roll about
+half of them. Sources that filter by gender do exist; the ones checked so far
+licence their free tier for *personal use only* and stamp a watermark across the
+image, which rules them out here. If you find a properly licensed one, point
+`--source` at it with `{gender}` in the URL and the matching becomes automatic.
+
+**Age.** The generator draws from the full range of its training data, which
+includes children — two of the first eight faces pulled for this repo were kids.
+
+`--only <id> --force` re-rolls whatever doesn't fit. Swapping two files that are
+each right for the *other* agent works too, and costs nothing.
 
 ## Using your own photos
 
@@ -61,7 +70,12 @@ recognise, re-run with `--force`.
 
 ## Changing the roster
 
-Edit `SUPPORT_AGENTS` in `lib/agents.ts`; the fetch script reads the ids straight
-out of that file. Names are first-name-only, and the `gradient` pair is the
-no-photo fallback — keep those in the blue/indigo/teal range, since green means
-"online" and amber/red mean "something is wrong" everywhere else in this UI.
+Edit `SUPPORT_AGENTS` in `lib/agents.ts`; the fetch script reads the roster
+straight out of that file and refuses to run if an entry has no `gender`. Names
+are first-name-only. Nothing in the product uses `gender` beyond picking the
+face — the customer is never told "he" or "she" — so for a name that works
+either way, pin whichever you want the desk to show.
+
+The `gradient` pair is the no-photo fallback — keep those in the blue/indigo/teal
+range, since green means "online" and amber/red mean "something is wrong"
+everywhere else in this UI.

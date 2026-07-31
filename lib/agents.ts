@@ -20,6 +20,17 @@ export interface SupportAgent {
   name: string;
   initial: string;
   /**
+   * What the name reads as, so the face matches it. Nothing in the product
+   * branches on this — the customer is never told "he" or "she" — it exists
+   * because a face that contradicts the name reads as fake, which is the one
+   * thing a support desk cannot afford. `scripts/fetch-agent-photos.mjs` asks
+   * the generator for a face of this gender.
+   *
+   * Names that work either way (Noor) are pinned here rather than left to the
+   * generator, so a re-roll can't silently flip the desk's makeup.
+   */
+  gender: "female" | "male";
+  /**
    * Fallback avatar colours, used when no photo file exists.
    * Kept in the blue/indigo/teal range on purpose: green reads as "online" and
    * amber/red as "something is wrong" everywhere else in this UI.
@@ -28,14 +39,14 @@ export interface SupportAgent {
 }
 
 export const SUPPORT_AGENTS: readonly SupportAgent[] = [
-  { id: "maya", name: "Maya", initial: "M", gradient: ["#2563eb", "#1d4ed8"] },
-  { id: "julian", name: "Julian", initial: "J", gradient: ["#4f46e5", "#4338ca"] },
-  { id: "noor", name: "Noor", initial: "N", gradient: ["#0e7490", "#155e75"] },
-  { id: "ravi", name: "Ravi", initial: "R", gradient: ["#0284c7", "#0369a1"] },
-  { id: "elena", name: "Elena", initial: "E", gradient: ["#6d28d9", "#5b21b6"] },
-  { id: "marcus", name: "Marcus", initial: "M", gradient: ["#1e40af", "#1e3a8a"] },
-  { id: "sofia", name: "Sofia", initial: "S", gradient: ["#0891b2", "#0e7490"] },
-  { id: "theo", name: "Theo", initial: "T", gradient: ["#4338ca", "#3730a3"] },
+  { id: "maya", name: "Maya", initial: "M", gender: "female", gradient: ["#2563eb", "#1d4ed8"] },
+  { id: "julian", name: "Julian", initial: "J", gender: "male", gradient: ["#4f46e5", "#4338ca"] },
+  { id: "noor", name: "Noor", initial: "N", gender: "female", gradient: ["#0e7490", "#155e75"] },
+  { id: "ravi", name: "Ravi", initial: "R", gender: "male", gradient: ["#0284c7", "#0369a1"] },
+  { id: "elena", name: "Elena", initial: "E", gender: "female", gradient: ["#6d28d9", "#5b21b6"] },
+  { id: "marcus", name: "Marcus", initial: "M", gender: "male", gradient: ["#1e40af", "#1e3a8a"] },
+  { id: "sofia", name: "Sofia", initial: "S", gender: "female", gradient: ["#0891b2", "#0e7490"] },
+  { id: "theo", name: "Theo", initial: "T", gender: "male", gradient: ["#4338ca", "#3730a3"] },
 ] as const;
 
 /** The one used when there is no conversation to derive from yet. */

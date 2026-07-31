@@ -22,7 +22,21 @@
       "Bash(git push *)",
       "Bash(git checkout *)",
       "Bash(sed -i '199d' app/api/lookup-order/route.ts)",
-      "Bash(sed -i '201,302d' app/api/lookup-order/route.ts)"
+      "Bash(sed -i '201,302d' app/api/lookup-order/route.ts)",
+      "Bash(node -e ' *)",
+      "Bash(grep -iE \"^sharp$|^jimp$|jpeg-js|^canvas$\")",
+      "Bash(node -e \"try{require.resolve\\('sharp'\\);console.log\\('sharp OK'\\)}catch\\(e\\){console.log\\('sharp AUSENTE'\\)}\")",
+      "Bash(node scripts/fetch-agent-photos.mjs --only julian,ravi,marcus,noor --force)",
+      "Bash(node scripts/fetch-agent-photos.mjs --only noor --force)",
+      "Bash(curl -s -m 25 -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 Chrome/124.0 Safari/537.36\" \"https://this-person-does-not-exist.com/en\")",
+      "Bash(grep -oiE \"\\(age|gender|etnic\\)[^>]{0,200}\")",
+      "Bash(curl -s -m 25 -A \"Mozilla/5.0\" \"https://this-person-does-not-exist.com/en\")",
+      "Bash(curl -s -m 25 -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) Chrome/124.0 Safari/537.36\" \"https://this-person-does-not-exist.com/en\")",
+      "Bash(node scripts/fetch-agent-photos.mjs --only ravi,marcus --force)",
+      "Bash(cp C:/Users/gabri/AppData/Local/Temp/claude/c--Users-gabri-OneDrive-Desktop-projet-mike-NorthSupportCB/670749df-8bd2-48d8-8ad5-fd9ddc148f6d/scratchpad/cand-2.jpg public/agents/ravi.jpg)",
+      "Bash(cp C:/Users/gabri/AppData/Local/Temp/claude/c--Users-gabri-OneDrive-Desktop-projet-mike-NorthSupportCB/670749df-8bd2-48d8-8ad5-fd9ddc148f6d/scratchpad/cand-4.jpg public/agents/marcus.jpg)",
+      "Bash(awk '{print $5, $9}')",
+      "Bash(node scripts/fetch-agent-photos.mjs)"
     ]
   }
 }
