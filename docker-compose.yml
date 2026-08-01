@@ -48,6 +48,14 @@ services:
       PRODUCT_VENDOR_MAP: ${PRODUCT_VENDOR_MAP}
       MOCK_MODE: ${MOCK_MODE:-false}
       NEXT_PUBLIC_MOCK_MODE: ${NEXT_PUBLIC_MOCK_MODE:-false}
+      # SendTrace (o banco da operação): pedidos do cliente, readmes de
+      # produto e o resumo de cada atendimento. Opcional — vazio, o agente
+      # funciona só com knowledge/. O token é o API_TOKEN_SERVICO do
+      # servidor do SendTrace; e-mail/senha são o fallback por login.
+      SENDTRACE_API_URL: ${SENDTRACE_API_URL}
+      SENDTRACE_API_TOKEN: ${SENDTRACE_API_TOKEN}
+      SENDTRACE_EMAIL: ${SENDTRACE_EMAIL}
+      SENDTRACE_SENHA: ${SENDTRACE_SENHA}
     volumes:
       # Edit knowledge/*.md on the host and the agent picks it up on the next
       # conversation — no rebuild needed.
