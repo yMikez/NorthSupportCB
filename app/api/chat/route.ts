@@ -15,6 +15,7 @@ import { loadKnowledge } from "@/lib/knowledge";
 import {
   sendtraceEnabled,
   buscarPedidosPorEmail,
+  buscarPedidosPorTransacao,
   buscarAtendimentos,
   listarReadmesProdutos,
   formatarPedidosParaPrompt,
@@ -167,11 +168,33 @@ export async function POST(req: Request) {
   let pedidosRegua: string | null = null;
   let conhecimentoDb: string | null = null;
   if (sendtraceEnabled()) {
-    const [pedidos, atendimentos, readmes] = await Promise.all([
-      customerEmail ? buscarPedidosPorEmail(customerEmail) : Promise.resolve([]),
-      customerEmail ? buscarAtendimentos(customerEmail) : Promise.resolve([]),
+    // A chave preferida é o ID DE TRANSAÇÃO: identifica UM pedido. Vem do
+    // orderId resolvido ou do caseKey quando ele não é um e-mail. Sem
+    // transação, cai na busca por e-mail — e a transação do pedido achado
+    // vira a chave dali em diante.
+    const transacaoRef =
+      orderId ?? (caseKey && !caseKey.includes("@") ? caseKey : null);
+
+    const pedidos = transacaoRef
+      ? await buscarPedidosPorTransacao(transacaoRef)
+      : customerEmail
+        ? await buscarPedidosPorEmail(customerEmail)
+        : [];
+    const transacaoId = pedidos[0]?.transacao_id ?? transacaoRef;
+
+    const [atendimentos, readmes] = await Promise.all([
+      transacaoId || customerEmail
+        ? buscarAtendimentos({ transacaoId, email: customerEmail })
+        : Promise.resolve([]),
       listarReadmesProdutos(),
     ]);
+
+    // O banco sabe quem é o cliente e o que ele comprou — quando o lookup
+    // local não trouxe, o agente recebe o nome e o produto daqui.
+    if (!customerName && pedidos[0]?.nome) customerName = pedidos[0].nome;
+    if (!productTitle && pedidos[0]?.produto) productTitle = pedidos[0].produto;
+    if (!customerEmail && pedidos[0]?.email) customerEmail = pedidos[0].email;
+
     pedidosRegua = [
       formatarPedidosParaPrompt(pedidos),
       formatarAtendimentosParaPrompt(atendimentos, pedidos),
@@ -180,7 +203,8 @@ export async function POST(req: Request) {
       .join("\n") || null;
     conhecimentoDb = formatarReadmesParaPrompt(readmes);
     console.log(
-      `[chat] sendtrace: pedidos=${pedidos.length} atendimentos=${atendimentos.length} readmes=${readmes.length}`,
+      `[chat] sendtrace: transacao=${transacaoId ?? "(nenhuma)"} pedidos=${pedidos.length} ` +
+        `atendimentos=${atendimentos.length} readmes=${readmes.length}`,
     );
   }
 

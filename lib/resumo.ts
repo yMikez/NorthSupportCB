@@ -65,9 +65,12 @@ export async function salvarResumoConversa(
     });
     if (!conversa) return;
 
+    // A chave preferida é a TRANSAÇÃO: o caseKey é um id de pedido sempre
+    // que não for um e-mail. A API resolve o que faltar pela fila.
+    const transacaoId = !isValidEmail(caseKey) ? caseKey : null;
     const email =
       conversa.customerEmail ?? (isValidEmail(caseKey) ? caseKey : null);
-    if (!email) return;
+    if (!transacaoId && !email) return;
 
     const mensagens = conversa.messages.slice(-MAX_MENSAGENS);
     if (!mensagens.length) return;
@@ -94,10 +97,11 @@ export async function salvarResumoConversa(
     );
 
     const data = new Date().toISOString().slice(0, 10);
-    await gravarResumoChat(email, `[suporte ${data} · ${desfecho}] ${corpo}`, {
-      desfecho,
-      riscoChargeback: risco,
-    });
+    await gravarResumoChat(
+      { transacaoId, email },
+      `[suporte ${data} · ${desfecho}] ${corpo}`,
+      { desfecho, riscoChargeback: risco },
+    );
   } catch (err) {
     console.warn("[resumo] não gravado:", (err as Error).message);
   }

@@ -163,6 +163,22 @@ export async function buscarPedidosPorEmail(
 }
 
 /**
+ * O pedido pelo ID DE TRANSAÇÃO — a chave preferida: identifica UM pedido,
+ * e traz junto o nome do cliente e o produto para o contexto do agente.
+ */
+export async function buscarPedidosPorTransacao(
+  transacaoId: string,
+): Promise<PedidoRegua[]> {
+  const alvo = transacaoId.trim();
+  if (!alvo) return [];
+  const r = await chamar<{ results?: PedidoRegua[] }>(
+    "GET",
+    `/api/disparos/?transacao_id=${encodeURIComponent(alvo)}&page_size=5`,
+  );
+  return r?.results ?? [];
+}
+
+/**
  * Os readmes de produto escritos no dashboard do painel — o conhecimento
  * vivo da IA. Cache curto: o time salva lá e quer ver o efeito na próxima
  * conversa, não amanhã.
@@ -183,55 +199,81 @@ export async function listarReadmesProdutos(): Promise<ProdutoReadme[]> {
   return dados;
 }
 
+/** A chave de um atendimento: a transação do pedido e/ou o e-mail do cliente. */
+export interface ChaveAtendimento {
+  transacaoId?: string | null;
+  email?: string | null;
+}
+
 /**
- * Os últimos atendimentos deste cliente — a memória do suporte, do mais
- * novo ao mais antigo.
+ * Os últimos atendimentos deste pedido/cliente — a memória do suporte, do
+ * mais novo ao mais antigo. Mandando transação E e-mail, a API casa
+ * qualquer um dos dois — costura o histórico antigo (por e-mail) com o
+ * novo (por transação).
  */
 export async function buscarAtendimentos(
-  email: string,
+  chave: ChaveAtendimento,
   max = 3,
 ): Promise<Atendimento[]> {
-  const alvo = email.trim().toLowerCase();
-  if (!alvo) return [];
+  const params = new URLSearchParams({ page_size: String(max) });
+  if (chave.transacaoId?.trim()) params.set("transacao_id", chave.transacaoId.trim());
+  if (chave.email?.trim()) params.set("email", chave.email.trim().toLowerCase());
+  if (!params.has("transacao_id") && !params.has("email")) return [];
+
   const r = await chamar<{ results?: Atendimento[] }>(
     "GET",
-    `/api/atendimentos/?email=${encodeURIComponent(alvo)}&page_size=${max}`,
+    `/api/atendimentos/?${params.toString()}`,
   );
   return r?.results ?? [];
 }
 
 /**
- * Grava o resumo de uma conversa encerrada no HISTÓRICO da API — que, na
- * mesma tacada, espelha o texto como "último atendimento" nos pedidos do
- * cliente. Se a API ainda for de uma versão sem o histórico, cai na rota
- * antiga (só o espelho) para nunca perder o registro.
+ * Grava o resumo de uma conversa encerrada no HISTÓRICO da API, chaveado
+ * pelo ID DE TRANSAÇÃO — a API resolve o que faltar (transação a partir do
+ * e-mail, ou o contrário) consultando a fila, e devolve o nome do cliente
+ * e o produto do pedido. Na mesma tacada, o texto vira o "último
+ * atendimento" (chat_resumo) daquele pedido.
+ *
+ * Se a API for de uma versão sem o histórico, cai na rota antiga por
+ * e-mail (só o espelho) para nunca perder o registro.
  */
 export async function gravarResumoChat(
-  email: string,
+  chave: ChaveAtendimento,
   resumo: string,
   extras: { desfecho?: string; riscoChargeback?: boolean } = {},
 ): Promise<boolean> {
   const corpo = {
-    email,
+    transacao_id: chave.transacaoId?.trim() || null,
+    email: chave.email?.trim() || null,
     resumo: resumo.slice(0, 9_000),
     desfecho: extras.desfecho ?? null,
     risco_chargeback: extras.riscoChargeback === true,
   };
+  if (!corpo.transacao_id && !corpo.email) return false;
 
-  const novo = await chamar<{ id?: number }>("POST", "/api/atendimentos/", corpo);
+  const novo = await chamar<{ id?: number; transacao_id?: string | null; cliente?: string | null }>(
+    "POST",
+    "/api/atendimentos/",
+    corpo,
+  );
   if (novo?.id) {
-    console.log(`[sendtrace] atendimento #${novo.id} registrado para ${email}`);
+    console.log(
+      `[sendtrace] atendimento #${novo.id} registrado — pedido ${novo.transacao_id ?? "(sem transação)"}` +
+        `${novo.cliente ? ` de ${novo.cliente}` : ""}`,
+    );
     return true;
   }
 
-  const antigo = await chamar<{ atualizados?: number }>(
-    "PUT",
-    "/api/disparos/chat/",
-    { email, resumo: corpo.resumo },
-  );
-  if (antigo?.atualizados) {
-    console.log(`[sendtrace] resumo gravado (rota antiga) em ${antigo.atualizados} pedido(s) de ${email}`);
-    return true;
+  if (corpo.email) {
+    const antigo = await chamar<{ atualizados?: number }>(
+      "PUT",
+      "/api/disparos/chat/",
+      { email: corpo.email, resumo: corpo.resumo },
+    );
+    if (antigo?.atualizados) {
+      console.log(`[sendtrace] resumo gravado (rota antiga) em ${antigo.atualizados} pedido(s) de ${corpo.email}`);
+      return true;
+    }
   }
   return false;
 }
