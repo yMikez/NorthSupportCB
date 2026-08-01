@@ -12,12 +12,17 @@
  * │  pode ficar sem resposta porque um sistema interno piscou.            │
  * └──────────────────────────────────────────────────────────────────────┘
  *
- * O bot entra com a PRÓPRIA conta (SENDTRACE_EMAIL/SENHA — crie um usuário
- * não-admin só para ele). O token de access vale ~60 min; renovamos por
- * login novo aos 45 para nunca operar com token vencido.
+ * Autenticação, em ordem de preferência:
+ *
+ *   1. SENDTRACE_API_TOKEN — o TOKEN DE SERVIÇO fixo da API (o
+ *      API_TOKEN_SERVICO do .env do SendTrace). Sem login, sem expiração,
+ *      nunca admin. É o modo certo para o bot.
+ *   2. SENDTRACE_EMAIL/SENHA — fallback: o bot loga como um usuário e
+ *      renova o access a cada 45 min (ele vale ~60).
  */
 
 const BASE = (process.env.SENDTRACE_API_URL || "").replace(/\/+$/, "");
+const API_TOKEN = process.env.SENDTRACE_API_TOKEN || "";
 const EMAIL = process.env.SENDTRACE_EMAIL || "";
 const SENHA = process.env.SENDTRACE_SENHA || "";
 
@@ -25,7 +30,7 @@ const TIMEOUT_MS = 8_000;
 const TOKEN_VALIDO_MS = 45 * 60 * 1000;
 
 export function sendtraceEnabled(): boolean {
-  return Boolean(BASE && EMAIL && SENHA);
+  return Boolean(BASE && (API_TOKEN || (EMAIL && SENHA)));
 }
 
 /** Um pedido na régua de pós-venda, como a API devolve. */
@@ -53,6 +58,9 @@ export interface ProdutoReadme {
 let tokenCache: { access: string; obtidoEm: number } | null = null;
 
 async function obterToken(forcarNovo = false): Promise<string | null> {
+  // Com o token de serviço não há login nem renovação — é ele, sempre.
+  if (API_TOKEN) return API_TOKEN;
+
   if (
     !forcarNovo &&
     tokenCache &&
