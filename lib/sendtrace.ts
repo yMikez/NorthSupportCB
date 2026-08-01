@@ -53,6 +53,16 @@ export interface ProdutoReadme {
   readme: string;
 }
 
+/** Um atendimento encerrado, como está no histórico da API. */
+export interface Atendimento {
+  id: number;
+  email: string;
+  resumo: string;
+  desfecho: string | null;
+  risco_chargeback: boolean;
+  criado_em: string;
+}
+
 /* ────────────────────────────  autenticação  ─────────────────────────── */
 
 let tokenCache: { access: string; obtidoEm: number } | null = null;
@@ -91,7 +101,7 @@ async function obterToken(forcarNovo = false): Promise<string | null> {
 }
 
 async function chamar<T>(
-  metodo: "GET" | "PUT",
+  metodo: "GET" | "POST" | "PUT",
   rota: string,
   corpo?: unknown,
 ): Promise<T | null> {
@@ -174,21 +184,53 @@ export async function listarReadmesProdutos(): Promise<ProdutoReadme[]> {
 }
 
 /**
- * Grava o resumo do atendimento no pedido do cliente (todos os pedidos
- * daquele e-mail). É o que o painel — e a próxima conversa deste bot —
- * vai ler como histórico.
+ * Os últimos atendimentos deste cliente — a memória do suporte, do mais
+ * novo ao mais antigo.
+ */
+export async function buscarAtendimentos(
+  email: string,
+  max = 3,
+): Promise<Atendimento[]> {
+  const alvo = email.trim().toLowerCase();
+  if (!alvo) return [];
+  const r = await chamar<{ results?: Atendimento[] }>(
+    "GET",
+    `/api/atendimentos/?email=${encodeURIComponent(alvo)}&page_size=${max}`,
+  );
+  return r?.results ?? [];
+}
+
+/**
+ * Grava o resumo de uma conversa encerrada no HISTÓRICO da API — que, na
+ * mesma tacada, espelha o texto como "último atendimento" nos pedidos do
+ * cliente. Se a API ainda for de uma versão sem o histórico, cai na rota
+ * antiga (só o espelho) para nunca perder o registro.
  */
 export async function gravarResumoChat(
   email: string,
   resumo: string,
+  extras: { desfecho?: string; riscoChargeback?: boolean } = {},
 ): Promise<boolean> {
-  const r = await chamar<{ atualizados?: number }>(
+  const corpo = {
+    email,
+    resumo: resumo.slice(0, 9_000),
+    desfecho: extras.desfecho ?? null,
+    risco_chargeback: extras.riscoChargeback === true,
+  };
+
+  const novo = await chamar<{ id?: number }>("POST", "/api/atendimentos/", corpo);
+  if (novo?.id) {
+    console.log(`[sendtrace] atendimento #${novo.id} registrado para ${email}`);
+    return true;
+  }
+
+  const antigo = await chamar<{ atualizados?: number }>(
     "PUT",
     "/api/disparos/chat/",
-    { email, resumo: resumo.slice(0, 9_000) },
+    { email, resumo: corpo.resumo },
   );
-  if (r?.atualizados) {
-    console.log(`[sendtrace] resumo gravado em ${r.atualizados} pedido(s) de ${email}`);
+  if (antigo?.atualizados) {
+    console.log(`[sendtrace] resumo gravado (rota antiga) em ${antigo.atualizados} pedido(s) de ${email}`);
     return true;
   }
   return false;
@@ -209,17 +251,40 @@ export function formatarPedidosParaPrompt(pedidos: PedidoRegua[]): string | null
     return partes.join(" · ");
   });
 
-  // O resumo de um atendimento anterior é o que faz a conversa melhorar a
-  // cada contato: o agente retoma de onde o último parou em vez de fazer o
-  // cliente repetir tudo.
-  const comResumo = pedidos.find((p) => p.chat_resumo);
-  if (comResumo?.chat_resumo) {
-    linhas.push(
-      `- Previous support contact (${String(comResumo.chat_resumo_em ?? "").slice(0, 10)}): ${comResumo.chat_resumo.slice(0, 800)}`,
-    );
+  return linhas.join("\n");
+}
+
+/**
+ * Os atendimentos anteriores viram linhas de contexto — é o que faz a
+ * conversa melhorar a cada contato: o agente retoma de onde o último
+ * parou em vez de fazer o cliente repetir tudo.
+ *
+ * Sem histórico (registros de antes dele existir), cai no chat_resumo do
+ * pedido — o "último atendimento" espelhado.
+ */
+export function formatarAtendimentosParaPrompt(
+  atendimentos: Atendimento[],
+  pedidos: PedidoRegua[],
+): string | null {
+  if (atendimentos.length) {
+    return atendimentos
+      .slice(0, 3)
+      .map((a) => {
+        const marca = [
+          String(a.criado_em).slice(0, 10),
+          a.desfecho,
+          a.risco_chargeback ? "chargeback risk was flagged" : null,
+        ].filter(Boolean).join(" · ");
+        return `- Previous support contact (${marca}): ${a.resumo.slice(0, 600)}`;
+      })
+      .join("\n");
   }
 
-  return linhas.join("\n");
+  const comResumo = pedidos.find((p) => p.chat_resumo);
+  if (comResumo?.chat_resumo) {
+    return `- Previous support contact (${String(comResumo.chat_resumo_em ?? "").slice(0, 10)}): ${comResumo.chat_resumo.slice(0, 800)}`;
+  }
+  return null;
 }
 
 /** Os readmes viram uma seção de conhecimento, no mesmo formato dos .md. */

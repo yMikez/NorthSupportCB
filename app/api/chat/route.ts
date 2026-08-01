@@ -15,8 +15,10 @@ import { loadKnowledge } from "@/lib/knowledge";
 import {
   sendtraceEnabled,
   buscarPedidosPorEmail,
+  buscarAtendimentos,
   listarReadmesProdutos,
   formatarPedidosParaPrompt,
+  formatarAtendimentosParaPrompt,
   formatarReadmesParaPrompt,
 } from "@/lib/sendtrace";
 import {
@@ -165,14 +167,20 @@ export async function POST(req: Request) {
   let pedidosRegua: string | null = null;
   let conhecimentoDb: string | null = null;
   if (sendtraceEnabled()) {
-    const [pedidos, readmes] = await Promise.all([
+    const [pedidos, atendimentos, readmes] = await Promise.all([
       customerEmail ? buscarPedidosPorEmail(customerEmail) : Promise.resolve([]),
+      customerEmail ? buscarAtendimentos(customerEmail) : Promise.resolve([]),
       listarReadmesProdutos(),
     ]);
-    pedidosRegua = formatarPedidosParaPrompt(pedidos);
+    pedidosRegua = [
+      formatarPedidosParaPrompt(pedidos),
+      formatarAtendimentosParaPrompt(atendimentos, pedidos),
+    ]
+      .filter(Boolean)
+      .join("\n") || null;
     conhecimentoDb = formatarReadmesParaPrompt(readmes);
     console.log(
-      `[chat] sendtrace: pedidos=${pedidos.length} readmes=${readmes.length}`,
+      `[chat] sendtrace: pedidos=${pedidos.length} atendimentos=${atendimentos.length} readmes=${readmes.length}`,
     );
   }
 

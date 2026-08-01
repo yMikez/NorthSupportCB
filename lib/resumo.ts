@@ -15,6 +15,7 @@ import { CLAUDE_MODEL, getAnthropicClient } from "./claude";
 import { isMockAI } from "./mock";
 import { sendtraceEnabled, gravarResumoChat } from "./sendtrace";
 import { isValidEmail } from "./email";
+import { isChargebackRisk } from "./retention";
 
 const MAX_MENSAGENS = 30;
 const MAX_POR_MENSAGEM = 400;
@@ -84,8 +85,19 @@ export async function salvarResumoConversa(
       : ((await resumirComClaude(transcricao)) ??
         `Conversa com ${mensagens.length} mensagens${conversa.productTitle ? ` sobre ${conversa.productTitle}` : ""}.`);
 
+    // O detector de risco roda sobre o que o cliente escreveu — o registro
+    // no histórico carrega a marca, e o painel a mostra na linha do tempo.
+    const risco = isChargebackRisk(
+      mensagens
+        .filter((m) => m.role === "user")
+        .map((m) => ({ role: "user" as const, content: m.content })),
+    );
+
     const data = new Date().toISOString().slice(0, 10);
-    await gravarResumoChat(email, `[suporte ${data} · ${desfecho}] ${corpo}`);
+    await gravarResumoChat(email, `[suporte ${data} · ${desfecho}] ${corpo}`, {
+      desfecho,
+      riscoChargeback: risco,
+    });
   } catch (err) {
     console.warn("[resumo] não gravado:", (err as Error).message);
   }
