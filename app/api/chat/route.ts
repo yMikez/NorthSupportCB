@@ -30,7 +30,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const HOUR_MS = 60 * 60 * 1000;
-const MAX_PER_HOUR = 20;
+
+/**
+ * Mensagens por IP por hora. 20 segura abuso sem atrapalhar um cliente real
+ * (uma conversa inteira raramente passa disso) — mas em teste/tuning estoura
+ * rápido, então é configurável. O contador é em memória: reiniciar o app
+ * zera tudo.
+ */
+const MAX_PER_HOUR = Number(process.env.CHAT_MAX_PER_HOUR) || 20;
 
 export async function POST(req: Request) {
   const ip = getClientIp(req);
