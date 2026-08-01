@@ -7,6 +7,7 @@ import { supportEmail } from "@/lib/mode";
 import { countRefundDemands } from "@/lib/retention";
 import { isValidEmail, normalizeEmail } from "@/lib/email";
 import { pickAgent } from "@/lib/agents";
+import { salvarResumoConversa } from "@/lib/resumo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -91,6 +92,14 @@ export async function POST(req: Request) {
       urgent,
     });
     await markConversationOutcome(caseKey, "escalated", platform);
+
+    // A memória de longo prazo: o resumo vai para o banco do SendTrace e o
+    // próximo atendimento (humano ou IA) começa sabendo o que houve aqui.
+    // Fire-and-forget — o cliente não espera por isto.
+    salvarResumoConversa(
+      caseKey,
+      urgent ? "escalado para humano (urgente)" : "escalado para humano",
+    ).catch((e) => console.warn("[escalate] resumo não gravado", e));
 
     // Nothing is emailed from here. The confirmation screen hands the customer
     // a mailto: link with the message already written, so reaching a person is

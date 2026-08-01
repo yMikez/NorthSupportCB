@@ -5,8 +5,20 @@ import { getAdapter, isPlatformId } from "@/lib/platforms";
 import { isHandoffMode } from "@/lib/mode";
 import { isValidEmail, normalizeEmail } from "@/lib/email";
 import { pickAgent } from "@/lib/agents";
-import { countRefundDemands, detectHardException } from "@/lib/retention";
+import {
+  countRefundDemands,
+  detectHardException,
+  isChargebackRisk,
+  chargebackRiskScore,
+} from "@/lib/retention";
 import { loadKnowledge } from "@/lib/knowledge";
+import {
+  sendtraceEnabled,
+  buscarPedidosPorEmail,
+  listarReadmesProdutos,
+  formatarPedidosParaPrompt,
+  formatarReadmesParaPrompt,
+} from "@/lib/sendtrace";
 import {
   ensureConversation,
   appendNewUserMessages,
@@ -128,14 +140,44 @@ export async function POST(req: Request) {
 
   const refundDemands = countRefundDemands(cleanMessages);
   const hardException = detectHardException(cleanMessages);
+  const chargebackRisk = isChargebackRisk(cleanMessages);
 
-  // The gate is enforced by these two numbers, so make them visible when
-  // tuning the policy — otherwise an early escalation is impossible to debug.
+  // The gate is enforced by these numbers, so make them visible when tuning
+  // the policy — otherwise an early escalation is impossible to debug.
   console.log(
-    `[chat] ${conversationId.slice(-8)} demands=${refundDemands} hardException=${hardException} vendor=${vendor ?? "(none)"}`,
+    `[chat] ${conversationId.slice(-8)} demands=${refundDemands} hardException=${hardException} ` +
+      `chargebackRisk=${chargebackRisk} (score=${chargebackRiskScore(cleanMessages)}) vendor=${vendor ?? "(none)"}`,
   );
 
   const knowledge = await loadKnowledge(vendor, platform);
+
+  // O banco do SendTrace entra em duas frentes: os PEDIDOS deste cliente (com
+  // o resumo do último atendimento) viram contexto da conversa, e os READMES
+  // de produto escritos no dashboard viram conhecimento — a mesma seção que os
+  // .md locais ocupam. Tudo fail-soft: sem API, o chat segue só com o local.
+  let pedidosRegua: string | null = null;
+  let conhecimentoDb: string | null = null;
+  if (sendtraceEnabled()) {
+    const [pedidos, readmes] = await Promise.all([
+      customerEmail ? buscarPedidosPorEmail(customerEmail) : Promise.resolve([]),
+      listarReadmesProdutos(),
+    ]);
+    pedidosRegua = formatarPedidosParaPrompt(pedidos);
+    conhecimentoDb = formatarReadmesParaPrompt(readmes);
+    console.log(
+      `[chat] sendtrace: pedidos=${pedidos.length} readmes=${readmes.length}`,
+    );
+  }
+
+  const conhecimentoCompleto = [
+    knowledge.combined,
+    conhecimentoDb
+      ? "# Product knowledge — written by the team in the dashboard (authoritative, kept up to date)\n\n" +
+        conhecimentoDb
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n\n---\n\n");
 
   await ensureConversation({
     conversationId,
@@ -161,7 +203,7 @@ export async function POST(req: Request) {
 
   try {
     const upstream = await streamClaudeResponse({
-      knowledge: knowledge.combined,
+      knowledge: conhecimentoCompleto,
       context: {
         // Re-derived from the conversation id rather than taken from the
         // request: the browser cannot rename the agent mid-conversation.
@@ -177,6 +219,8 @@ export async function POST(req: Request) {
         vendor,
         refundDemands,
         hardException,
+        pedidosRegua,
+        chargebackRisk,
       },
       messages: cleanMessages,
     });

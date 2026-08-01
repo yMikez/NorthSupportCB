@@ -85,3 +85,75 @@ export function hasHardException(text: string): boolean {
 export function detectHardException(messages: ChatMessage[]): boolean {
   return messages.some((m) => m.role === "user" && hasHardException(m.content));
 }
+
+/* ══════════════════════  risco de chargeback  ══════════════════════════ */
+
+/**
+ * A ameaça EXPLÍCITA de chargeback já é exceção dura (acima). Isto aqui pega
+ * o degrau anterior — o cliente em rota de colisão que ainda não disse a
+ * palavra: acusações de golpe, ameaça de denúncia, ultimatos, gritaria.
+ *
+ * Um chargeback custa a venda + taxa + pontos no processador; segurar a
+ * retenção nesse estado é trocar um reembolso por um prejuízo maior. Quando o
+ * risco passa do limiar, o gate abre mais cedo e o agente é instruído a
+ * acalmar e OFERECER o atendente humano.
+ *
+ * Pesos somados por mensagem do cliente (com teto por mensagem, para uma
+ * única mensagem raivosa não estourar sozinha o que três sinais espalhados
+ * indicam melhor).
+ */
+const RISK_PATTERNS: Array<{ padrao: RegExp; peso: number }> = [
+  // Acusações de fraude — quem chama a compra de golpe disputa no banco.
+  { padrao: /\b(golpe|scam|fraude|fraud|rip[\s-]?off|enganad[oa]|charlat)/i, peso: 2 },
+  { padrao: /\b(roub(o|ad[oa]|aram)|ladr[õoã]|stole|theft|thie(f|ves))\b/i, peso: 2 },
+  // Ameaça de denúncia pública ou formal (Procon/BBB/advogado já são exceção
+  // dura; aqui ficam os degraus antes disso).
+  { padrao: /\b(reclame\s*aqui|denunciar?|denuncio|report(ar|ing|ed)?\s+(you|this|voc[êe]s?)|expor|exposing)\b/i, peso: 2 },
+  { padrao: /\b(avalia[çc][ãa]o|review|coment[áa]rio)\s+(negativ|p[úu]blic|1\s*estrela)/i, peso: 1 },
+  { padrao: /\bvou\s+(ligar|falar|entrar\s+em\s+contato)\s+(com|no|para)\s+(o\s+)?(banco|cart[ãa]o|operadora)\b/i, peso: 3 },
+  { padrao: /\b(call(ing)?|contact(ing)?)\s+my\s+(bank|card|credit\s+card)\b/i, peso: 3 },
+  // Ultimato — a última mensagem antes de resolver por fora.
+  { padrao: /\b([úu]ltima\s+(vez|chance|mensagem)|last\s+(time|chance|warning)|final\s+(answer|warning))\b/i, peso: 2 },
+  { padrao: /\b(cansei|chega|desisto|fed\s+up|i'?m\s+done|enough)\b/i, peso: 1 },
+  // Gritaria sustentada.
+  { padrao: /[!?]{3,}/, peso: 1 },
+];
+
+const CAPS_MIN_LETRAS = 12;
+const RISCO_LIMIAR = 3;
+const TETO_POR_MENSAGEM = 3;
+
+function riscoDaMensagem(text: string): number {
+  let pontos = 0;
+  for (const { padrao, peso } of RISK_PATTERNS) {
+    if (padrao.test(text)) pontos += peso;
+  }
+  // Mensagem inteira aos berros conta como um sinal.
+  const letras = text.replace(/[^a-za-záéíóúâêôãõç]/gi, "");
+  if (letras.length >= CAPS_MIN_LETRAS) {
+    const maiusculas = text.replace(/[^A-ZÁÉÍÓÚÂÊÔÃÕÇ]/g, "").length;
+    if (maiusculas / letras.length > 0.7) pontos += 1;
+  }
+  return Math.min(pontos, TETO_POR_MENSAGEM);
+}
+
+/** Soma do risco em todas as mensagens do cliente. */
+export function chargebackRiskScore(messages: ChatMessage[]): number {
+  return messages
+    .filter((m) => m.role === "user")
+    .reduce((total, m) => total + riscoDaMensagem(m.content), 0);
+}
+
+/**
+ * O cliente está em pico de risco de chargeback?
+ *
+ * Dois caminhos: sinais de raiva/acusação suficientes por si sós, ou uma
+ * insistência já longa (4+ pedidos de reembolso) combinada com qualquer
+ * sinal de escalada — quem pediu quatro vezes e começou a gritar não vai
+ * pedir uma sétima.
+ */
+export function isChargebackRisk(messages: ChatMessage[]): boolean {
+  const score = chargebackRiskScore(messages);
+  if (score >= RISCO_LIMIAR) return true;
+  return countRefundDemands(messages) >= 4 && score >= 1;
+}

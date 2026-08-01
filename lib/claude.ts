@@ -31,6 +31,13 @@ export interface SystemPromptContext {
   /** Counted in code, not by the model — see lib/retention.ts. */
   refundDemands?: number;
   hardException?: boolean;
+  /**
+   * Bloco pronto com os pedidos do cliente na régua do SendTrace (status,
+   * etapa, resumo do último atendimento). Montado em lib/sendtrace.ts.
+   */
+  pedidosRegua?: string | null;
+  /** Sinais de pré-chargeback detectados em código — see lib/retention.ts. */
+  chargebackRisk?: boolean;
 }
 
 /** Demands required before the agent may hand the conversation to a human. */
@@ -43,7 +50,25 @@ export const ESCALATION_THRESHOLD = 6;
  * not hold — under sustained pressure it escalates anyway. Withholding the
  * action entirely does hold: an instruction that is absent cannot be followed.
  */
-function gateBlock(open: boolean, urgent: boolean): string {
+function gateBlock(open: boolean, urgent: boolean, risco = false): string {
+  if (!urgent && risco) {
+    return `## Chargeback risk detected — offer a human now
+
+The system has detected strong signals that this customer is about to dispute
+the charge with their bank (accusations of fraud, ultimatums, threats to
+report, sustained anger). A chargeback costs far more than a refund — do NOT
+start any new retention step.
+
+Your only goals now, in order:
+1. Validate their frustration sincerely, in one sentence. No arguing, no
+   defending the product.
+2. OFFER to hand them to a human colleague right away, who can resolve this
+   personally — including the money side.
+3. If they accept, or if their next message is still angry or demanding, end
+   your message with this JSON on a new line and nothing after it:
+  {"action":"escalate_to_human","order":"{ORDER_ID}","urgent":true}`;
+  }
+
   if (urgent) {
     return `## Hand over now — hard exception
 
@@ -141,16 +166,28 @@ export function buildContextBlock(ctx: SystemPromptContext): string {
   // only here so the agent understands the order's context.
   if (ctx.platform) lines.push(`Sales platform (internal only): ${ctx.platform}`);
 
+  // O que o banco do SendTrace sabe deste cliente: pedidos reais, etapa da
+  // régua e o resumo do último atendimento. É o que deixa o agente retomar a
+  // conversa de onde o contato anterior parou, em vez de recomeçar do zero.
+  if (ctx.pedidosRegua) {
+    lines.push(
+      "",
+      "What our order database shows for this customer (internal only — use it to be accurate and to pick up where any previous contact left off, never read it out verbatim):",
+      ctx.pedidosRegua,
+    );
+  }
+
   // Counted in code, not by the model — see lib/retention.ts.
   const demands = ctx.refundDemands ?? 0;
   const urgent = ctx.hardException === true;
-  const gateOpen = urgent || demands >= ESCALATION_THRESHOLD;
+  const risco = ctx.chargebackRisk === true;
+  const gateOpen = urgent || risco || demands >= ESCALATION_THRESHOLD;
 
   return (
     "# Conversation context\n\n" +
     lines.join("\n") +
     "\n\n" +
-    BASE_INSTRUCTIONS.replace("{GATE_BLOCK}", gateBlock(gateOpen, urgent))
+    BASE_INSTRUCTIONS.replace("{GATE_BLOCK}", gateBlock(gateOpen, urgent, risco))
       .replaceAll("{AGENT_NAME}", ctx.agentName)
       .replaceAll("{ORDER_ID}", ctx.caseRef)
       .replaceAll("{THRESHOLD}", String(ESCALATION_THRESHOLD))

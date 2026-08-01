@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { markConversationOutcome } from "@/lib/logging";
+import { salvarResumoConversa } from "@/lib/resumo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +23,13 @@ export async function POST(req: Request) {
     }
 
     await markConversationOutcome(caseKey, "resolved", platform);
+
+    // Grava a memória do atendimento no banco do SendTrace — o próximo
+    // contato deste cliente começa de onde este parou. Fire-and-forget.
+    salvarResumoConversa(caseKey, "resolvido (cliente retido)").catch((e) =>
+      console.warn("[resolve-conversation] resumo não gravado", e),
+    );
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[resolve-conversation]", err);
