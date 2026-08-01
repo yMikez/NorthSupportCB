@@ -13,7 +13,7 @@
 import { prisma } from "./db";
 import { CLAUDE_MODEL, getAnthropicClient } from "./claude";
 import { isMockAI } from "./mock";
-import { sendtraceEnabled, gravarResumoChat } from "./sendtrace";
+import { sendtraceEnabled, gravarResumoChat, gravarResumoParcial } from "./sendtrace";
 import { isValidEmail } from "./email";
 import { isChargebackRisk } from "./retention";
 
@@ -52,6 +52,14 @@ async function resumirComClaude(transcricao: string): Promise<string | null> {
 export async function salvarResumoConversa(
   caseKey: string,
   desfecho: string,
+  opts: {
+    /**
+     * true = checkpoint no meio da conversa: sobrescreve o "último
+     * atendimento" do pedido, sem criar registro no histórico. O registro
+     * definitivo é o save final (parcial: false), no encerramento.
+     */
+    parcial?: boolean;
+  } = {},
 ): Promise<void> {
   if (!sendtraceEnabled()) return;
 
@@ -97,6 +105,16 @@ export async function salvarResumoConversa(
     );
 
     const data = new Date().toISOString().slice(0, 10);
+
+    if (opts.parcial) {
+      // Checkpoint: só o espelho no pedido, sobrescrevendo o anterior.
+      await gravarResumoParcial(
+        { transacaoId, email },
+        `[suporte ${data} · ${desfecho}] ${corpo}`,
+      );
+      return;
+    }
+
     await gravarResumoChat(
       { transacaoId, email },
       `[suporte ${data} · ${desfecho}] ${corpo}`,

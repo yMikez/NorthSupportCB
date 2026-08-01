@@ -278,6 +278,26 @@ export async function gravarResumoChat(
   return false;
 }
 
+/**
+ * Resumo PARCIAL — o checkpoint durante a conversa.
+ *
+ * Vai só para o "último atendimento" do pedido (chat_resumo), sobrescrevendo
+ * o checkpoint anterior — NÃO cria registro no histórico. O registro
+ * definitivo, com desfecho, é o gravarResumoChat no encerramento.
+ */
+export async function gravarResumoParcial(
+  chave: ChaveAtendimento,
+  resumo: string,
+): Promise<boolean> {
+  const corpo: Record<string, unknown> = { resumo: resumo.slice(0, 9_000) };
+  if (chave.transacaoId?.trim()) corpo.transacao_id = chave.transacaoId.trim();
+  else if (chave.email?.trim()) corpo.email = chave.email.trim().toLowerCase();
+  else return false;
+
+  const r = await chamar<{ atualizados?: number }>("PUT", "/api/disparos/chat/", corpo);
+  return Boolean(r?.atualizados);
+}
+
 /* ─────────────────────  formatação para o prompt  ────────────────────── */
 
 /** O bloco de contexto que o agente recebe sobre os pedidos do cliente. */
