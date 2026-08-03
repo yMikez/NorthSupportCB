@@ -99,8 +99,11 @@ Your only goals now, in order:
    defending the product.
 2. OFFER to hand them to a human colleague right away, who can resolve this
    personally — including the money side.
-3. If they accept, or if their next message is still angry or demanding, end
-   your message with this JSON on a new line and nothing after it:
+3. If they accept, or if their next message is still angry or demanding:
+   announce PLAINLY that you are passing the conversation to a human colleague
+   now, that their direct contact email will appear on screen, and that they
+   can rate this chat — then end your message with this JSON on a new line and
+   nothing after it:
   {"action":"escalate_to_human","order":"{ORDER_ID}","urgent":true}`;
   }
 
@@ -109,9 +112,10 @@ Your only goals now, in order:
 
 The system has flagged a hard exception on this conversation (health reaction,
 chargeback or legal threat, our own delivery failure, or a vulnerable
-customer). Do NOT run any retention step. Apologise, tell them a colleague is
-taking over right away, and end the message with this JSON on a new line and
-nothing after it:
+customer). Do NOT run any retention step. Apologise, announce PLAINLY that a
+human colleague is taking over right away and that their direct contact email
+will appear on screen in a moment, and end the message with this JSON on a new
+line and nothing after it:
   {"action":"escalate_to_human","order":"{ORDER_ID}","urgent":true}`;
   }
 
@@ -125,9 +129,11 @@ another retention step, do not ask another probing question, do not offer
 another alternative.
 
 Your next message must: acknowledge their decision in one warm sentence
-(no arguing), say a colleague is taking this over personally and that the
-contact details will appear on screen right away — then end the message with
-this JSON on a new line and nothing after it:
+(no arguing), announce that you are passing this to a human colleague who will
+follow up personally, that their direct contact email will appear on screen
+right away, and invite them to rate this chat with the stars on the next
+screen — then end the message with this JSON on a new line and nothing
+after it:
   {"action":"escalate_to_human","order":"{ORDER_ID}"}`;
   }
 

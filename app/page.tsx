@@ -441,6 +441,22 @@ export default function CustomerPage() {
 
       const match = acc.match(ACTION_REGEX);
       if (match) {
+        // O JSON da ação é protocolo, não conversa: nunca pode aparecer na
+        // bolha. E se o modelo foi lacônico e mandou SÓ o JSON, o aviso de
+        // repasse entra por nós — o cliente precisa saber o que vai acontecer
+        // antes de a tela mudar.
+        const visivel = acc.replace(ACTION_REGEX, "").trim();
+        const isHandover = /"action"\s*:\s*"(escalate_to_human|create_refund)"/.test(match[0]);
+        const aviso = visivel
+          || (isHandover
+            ? "I'm passing this to a human colleague right now — you'll see their direct contact email on the next screen, along with a quick rating for this chat."
+            : "Thanks for chatting with us!");
+        setMessages((prev) => {
+          const copy = prev.slice();
+          copy[copy.length - 1] = { ...copy[copy.length - 1], content: aviso };
+          return copy;
+        });
+
         try {
           const parsed = JSON.parse(match[0]) as {
             action?: string;
@@ -455,6 +471,11 @@ export default function CustomerPage() {
             parsed.action === "escalate_to_human" ||
             parsed.action === "create_refund"
           ) {
+            // O aviso precisa ser LIDO antes de a tela mudar: sem esta pausa,
+            // o encerramento parece um corte no meio da frase.
+            setSending(false);
+            setStreaming(false);
+            await new Promise((r) => setTimeout(r, 3500));
             await triggerEscalation(target, parsed.urgent === true);
           } else if (parsed.action === "offer_close") {
             setOfferClose(target);
@@ -858,7 +879,7 @@ export default function CustomerPage() {
               <p className="mt-2 text-sm text-neutral-500">
                 {endReason === "resolved"
                   ? "Thanks for chatting with us — we hope everything goes great from here."
-                  : "Thanks for your patience — here's what happens next."}
+                  : "A human colleague is taking over from here. Rate this chat below, and use the email button to reach them directly."}
               </p>
 
               {/* CSAT: cinco estrelas, opcional. A nota vai para o atendimento
