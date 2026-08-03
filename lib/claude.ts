@@ -50,8 +50,9 @@ export interface SystemPromptContext {
  *
  *   1. exigências de reembolso   — 3 (era 6: seis "quero meu dinheiro" antes
  *      de ceder lia-se como surdez, e surdez vira chargeback e review)
- *   2. pedidos de HUMANO         — 2 ("quero um atendente" duas vezes é o
- *      cliente dizendo que a IA não serve para este caso)
+ *   2. pedido de HUMANO          — 1: quem pede uma pessoa recebe uma pessoa.
+ *      Negar o primeiro pedido para tentar mais uma retenção é exatamente a
+ *      experiência de "robô que não escuta" que gera a raiva do segundo.
  *   3. conversa arrastada        — 10+ mensagens do cliente com ao menos um
  *      pedido (de reembolso ou de humano) sem resolução
  *
@@ -60,7 +61,7 @@ export interface SystemPromptContext {
 export const ESCALATION_THRESHOLD =
   Number(process.env.ESCALATION_DEMANDS) || 3;
 export const HUMAN_REQUEST_THRESHOLD =
-  Number(process.env.ESCALATION_HUMAN_REQUESTS) || 2;
+  Number(process.env.ESCALATION_HUMAN_REQUESTS) || 1;
 export const LONG_CONVERSATION_TURNS =
   Number(process.env.ESCALATION_LONG_TURNS) || 10;
 
