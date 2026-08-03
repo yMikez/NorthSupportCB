@@ -245,6 +245,9 @@ export async function gravarResumoChat(
     riscoChargeback?: boolean;
     /** O que o dashboard do suporte conta — ver os campos em Atendimento na API. */
     motivo?: string | null;
+    /** Ao criar tópico NOVO: rótulo humano e o critério de encaixe dele. */
+    topicoNome?: string | null;
+    topicoDescricao?: string | null;
     resolvido?: boolean | null;
     reembolsoPedido?: boolean;
     reembolsoEvitado?: boolean | null;
@@ -260,6 +263,8 @@ export async function gravarResumoChat(
     desfecho: extras.desfecho ?? null,
     risco_chargeback: extras.riscoChargeback === true,
     motivo: extras.motivo ?? null,
+    topico_nome: extras.topicoNome ?? null,
+    topico_descricao: extras.topicoDescricao ?? null,
     resolvido: typeof extras.resolvido === "boolean" ? extras.resolvido : null,
     reembolso_pedido: extras.reembolsoPedido === true,
     reembolso_evitado:
@@ -298,28 +303,40 @@ export async function gravarResumoChat(
   return false;
 }
 
-/**
- * O vocabulário VIVO de motivos — os assuntos já registrados, do mais comum
- * ao mais raro. O classificador o recebe para REUTILIZAR nomes: assunto igual
- * ou próximo de um existente cai na mesma linha do dashboard; só assunto
- * realmente diferente ganha nome novo. Cache curto: uma chamada por minuto
- * para o app inteiro.
- */
-let motivosCache: { dados: string[]; em: number } | null = null;
-const MOTIVOS_CACHE_MS = 60 * 1000;
+/** Um tópico de contato do SendTrace — a descrição é o critério de encaixe. */
+export interface TopicoContato {
+  slug: string;
+  nome: string;
+  descricao: string | null;
+  total: number;
+}
 
-export async function listarMotivosExistentes(): Promise<string[]> {
-  if (motivosCache && Date.now() - motivosCache.em < MOTIVOS_CACHE_MS) {
-    return motivosCache.dados;
+/**
+ * Os TÓPICOS de contato — os assuntos já registrados, com a DESCRIÇÃO de cada
+ * um. O classificador os recebe para decidir encaixe: assunto que se enquadra
+ * num tópico existente reutiliza o slug dele (mescla na mesma linha do
+ * dashboard); só assunto realmente diferente vira tópico novo. Cache curto:
+ * uma chamada por minuto para o app inteiro.
+ */
+let topicosCache: { dados: TopicoContato[]; em: number } | null = null;
+const TOPICOS_CACHE_MS = 60 * 1000;
+
+export async function listarTopicos(): Promise<TopicoContato[]> {
+  if (topicosCache && Date.now() - topicosCache.em < TOPICOS_CACHE_MS) {
+    return topicosCache.dados;
   }
-  const r = await chamar<{ motivo?: string }[]>(
-    "GET",
-    "/api/atendimentos/motivos/?limite=60",
-  );
+  const r = await chamar<TopicoContato[]>("GET", "/api/topicos/?limite=60");
   const dados = Array.isArray(r)
-    ? r.map((x) => String(x.motivo ?? "")).filter(Boolean)
+    ? r
+        .map((t) => ({
+          slug: String(t.slug ?? ""),
+          nome: String(t.nome ?? t.slug ?? ""),
+          descricao: t.descricao ?? null,
+          total: Number(t.total ?? 0),
+        }))
+        .filter((t) => t.slug)
     : [];
-  if (r) motivosCache = { dados, em: Date.now() };
+  if (r) topicosCache = { dados, em: Date.now() };
   return dados;
 }
 

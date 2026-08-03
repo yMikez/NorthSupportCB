@@ -23,7 +23,8 @@ import {
   gravarResumoChat,
   gravarResumoParcial,
   gravarPerguntasSemResposta,
-  listarMotivosExistentes,
+  listarTopicos,
+  type TopicoContato,
 } from "./sendtrace";
 import { isValidEmail } from "./email";
 import { isChargebackRisk } from "./retention";
@@ -119,44 +120,57 @@ function classificarMotivoHeuristico(
 interface ResumoEstruturado {
   resumo: string;
   motivo: string | null;
+  /** Preenchidos só quando a IA criou um TÓPICO novo. */
+  topicoNome: string | null;
+  topicoDescricao: string | null;
   perguntas: string[];
 }
 
 /**
- * Uma chamada só faz as três coisas: resume, classifica o motivo e lista as
- * perguntas que ficaram sem resposta. JSON estrito para o parse não depender
- * de boa vontade; se vier torto, o texto inteiro ainda serve de resumo.
+ * Uma chamada só faz as três coisas: resume, encaixa a conversa num TÓPICO e
+ * lista as perguntas que ficaram sem resposta. JSON estrito para o parse não
+ * depender de boa vontade; se vier torto, o texto inteiro ainda serve de resumo.
  *
- * `motivosExistentes` é o vocabulário vivo do banco: assunto igual ou muito
- * próximo de um deles REUTILIZA aquele nome exato (mescla na mesma linha do
- * dashboard); só assunto realmente diferente ganha nome novo.
+ * `topicos` vem do banco, com a DESCRIÇÃO de cada um — o critério de encaixe.
+ * A instrução é deliberadamente "force só um pouco": prefira um tópico
+ * existente quando o assunto se enquadra de verdade; encaixe forçado polui o
+ * tópico e esconde o assunto novo.
  */
 async function resumirComClaude(
   transcricao: string,
-  motivosExistentes: string[],
+  topicos: TopicoContato[],
 ): Promise<ResumoEstruturado | null> {
+  const catalogo = topicos
+    .map((t) => `- ${t.slug}: ${t.descricao ?? t.nome}`)
+    .join("\n");
+
   try {
     const client = getAnthropicClient();
     const resposta = await client.messages.create({
       model: CLAUDE_MODEL,
-      max_tokens: 500,
+      max_tokens: 600,
       system:
         "Você analisa conversas de suporte ao cliente para o histórico interno. " +
         'Responda APENAS com JSON válido, sem markdown: {"resumo": string, ' +
-        '"motivo": string, "perguntas_sem_resposta": string[]}. ' +
+        '"motivo": string, "topico_nome": string|null, ' +
+        '"topico_descricao": string|null, "perguntas_sem_resposta": string[]}. ' +
         "resumo: em português, até 4 frases — motivo do contato, humor do " +
         "cliente, o que foi tentado e o desfecho; inclua o que ajudar o próximo " +
         "atendente (produto, promessas feitas, sinais de risco de chargeback). " +
-        "motivo: decida pela PRIMEIRA mensagem do cliente (é o que o trouxe ao " +
-        "chat), ajustando pelo rumo do resto da conversa; se ele começou " +
-        "perguntando do rastreio e só pediu reembolso depois que soube do " +
-        "atraso, o motivo é rastreamento, não reembolso. Se o assunto for o " +
-        "MESMO ou muito próximo de um destes motivos já registrados, use " +
-        `EXATAMENTE aquele nome: ${motivosExistentes.join(", ")}. Só quando o ` +
-        "assunto for realmente diferente de todos, crie um nome NOVO que o " +
-        "descreva: curto (2 a 4 palavras), em português, minúsculas com " +
-        'underscore (ex.: "brinde_nao_recebido", "desconto_nao_aplicado"). ' +
-        'Evite "outro" — ele esconde o assunto. ' +
+        "motivo: o TÓPICO da conversa. Decida pela PRIMEIRA mensagem do " +
+        "cliente (é o que o trouxe ao chat), ajustando pelo rumo do resto; se " +
+        "ele começou perguntando do rastreio e só pediu reembolso depois que " +
+        "soube do atraso, o tópico é rastreamento, não reembolso.\n" +
+        "Estes são os tópicos existentes, com o que cabe em cada um:\n" +
+        catalogo +
+        "\nSe o assunto principal SE ENQUADRA num destes tópicos — mesmo tema, " +
+        "ainda que dito com outras palavras — use exatamente aquele slug e " +
+        "deixe topico_nome e topico_descricao nulos. NÃO force o encaixe: se " +
+        "só serve 'mais ou menos', o assunto merece tópico próprio. Nesse " +
+        "caso crie: motivo = slug novo curto em português, minúsculas com " +
+        'underscore (ex.: "brinde_nao_recebido"); topico_nome = título curto ' +
+        "legível, com acentos; topico_descricao = uma frase dizendo o que " +
+        'cabe neste tópico. Evite "outro" — ele esconde o assunto. ' +
         "perguntas_sem_resposta: as perguntas do cliente que o agente NÃO " +
         "conseguiu responder de fato (na língua original, curtas); lista " +
         "vazia se não houver.",
@@ -170,18 +184,22 @@ async function resumirComClaude(
       const dados = JSON.parse(texto) as {
         resumo?: string;
         motivo?: string;
+        topico_nome?: string | null;
+        topico_descricao?: string | null;
         perguntas_sem_resposta?: unknown;
       };
       return {
         resumo: String(dados.resumo ?? "").trim() || texto,
         motivo: slugMotivo(dados.motivo),
+        topicoNome: String(dados.topico_nome ?? "").trim().slice(0, 120) || null,
+        topicoDescricao: String(dados.topico_descricao ?? "").trim().slice(0, 500) || null,
         perguntas: Array.isArray(dados.perguntas_sem_resposta)
           ? dados.perguntas_sem_resposta.map((p) => String(p)).filter(Boolean)
           : [],
       };
     } catch {
       // JSON quebrado: o texto ainda é um resumo utilizável.
-      return { resumo: texto, motivo: null, perguntas: [] };
+      return { resumo: texto, motivo: null, topicoNome: null, topicoDescricao: null, perguntas: [] };
     }
   } catch (err) {
     console.warn("[resumo] Claude indisponível:", (err as Error).message);
@@ -260,28 +278,37 @@ export async function salvarResumoConversa(
     const motivoHeuristico = classificarMotivoHeuristico(doCliente)
       ?? (houveIntencaoReembolso ? "reembolso" : "outro");
 
-    // O vocabulário vivo: os motivos já registrados (por volume) mais os
-    // canônicos que ainda não apareceram. É contra esta lista que a IA decide
-    // "mesmo assunto → mesmo nome" ou "assunto novo → nome novo".
-    const vocabulario = [
-      ...new Set([
-        ...(await listarMotivosExistentes().catch(() => [])),
-        ...MOTIVOS.filter((m) => m !== "outro"),
-      ]),
-    ];
+    // Os tópicos do banco, com descrição — o critério de encaixe. Se a API
+    // estiver fora, os canônicos servem de catálogo mínimo (sem descrição).
+    const topicos: TopicoContato[] = await listarTopicos().catch(() => []);
+    const catalogo = topicos.length
+      ? topicos
+      : MOTIVOS.filter((m) => m !== "outro").map((m) => ({
+          slug: m, nome: m, descricao: null, total: 0,
+        }));
 
     const estruturado: ResumoEstruturado = isMockAI()
       ? {
           resumo: `Conversa com ${mensagens.length} mensagens${conversa.productTitle ? ` sobre ${conversa.productTitle}` : ""}.`,
           motivo: motivoHeuristico,
+          topicoNome: null,
+          topicoDescricao: null,
           perguntas: [],
         }
-      : ((await resumirComClaude(transcricao, vocabulario)) ?? {
+      : ((await resumirComClaude(transcricao, catalogo)) ?? {
           resumo: `Conversa com ${mensagens.length} mensagens${conversa.productTitle ? ` sobre ${conversa.productTitle}` : ""}.`,
           motivo: motivoHeuristico,
+          topicoNome: null,
+          topicoDescricao: null,
           perguntas: [],
         });
     if (!estruturado.motivo) estruturado.motivo = motivoHeuristico;
+    // Nome/descrição só valem para tópico NOVO — num existente, mandá-los
+    // faria cada conversa tentar reescrever o critério do tópico.
+    if (topicos.some((t) => t.slug === estruturado.motivo)) {
+      estruturado.topicoNome = null;
+      estruturado.topicoDescricao = null;
+    }
 
     // O detector de risco roda sobre o que o cliente escreveu — o registro
     // no histórico carrega a marca, e o painel a mostra na linha do tempo.
@@ -345,6 +372,8 @@ export async function salvarResumoConversa(
         desfecho,
         riscoChargeback: risco,
         motivo: estruturado.motivo,
+        topicoNome: estruturado.topicoNome,
+        topicoDescricao: estruturado.topicoDescricao,
         resolvido,
         reembolsoPedido,
         reembolsoEvitado,
