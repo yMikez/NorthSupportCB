@@ -7,6 +7,7 @@ import { isValidEmail, normalizeEmail } from "@/lib/email";
 import { pickAgent } from "@/lib/agents";
 import {
   countRefundDemands,
+  countHumanRequests,
   detectHardException,
   isChargebackRisk,
   chargebackRiskScore,
@@ -184,13 +185,16 @@ export async function POST(req: Request) {
   }
 
   const refundDemands = countRefundDemands(cleanMessages);
+  const humanRequests = countHumanRequests(cleanMessages);
+  const userTurns = cleanMessages.filter((m) => m.role === "user").length;
   const hardException = detectHardException(cleanMessages);
   const chargebackRisk = isChargebackRisk(cleanMessages);
 
   // The gate is enforced by these numbers, so make them visible when tuning
   // the policy — otherwise an early escalation is impossible to debug.
   console.log(
-    `[chat] ${conversationId.slice(-8)} demands=${refundDemands} hardException=${hardException} ` +
+    `[chat] ${conversationId.slice(-8)} demands=${refundDemands} humanReqs=${humanRequests} ` +
+      `turns=${userTurns} hardException=${hardException} ` +
       `chargebackRisk=${chargebackRisk} (score=${chargebackRiskScore(cleanMessages)}) vendor=${vendor ?? "(none)"}`,
   );
 
@@ -315,6 +319,8 @@ export async function POST(req: Request) {
         productTitle,
         vendor,
         refundDemands,
+        humanRequests,
+        userTurns,
         hardException,
         pedidosRegua,
         chargebackRisk,

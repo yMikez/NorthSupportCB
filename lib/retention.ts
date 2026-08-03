@@ -157,3 +157,41 @@ export function isChargebackRisk(messages: ChatMessage[]): boolean {
   if (score >= RISCO_LIMIAR) return true;
   return countRefundDemands(messages) >= 4 && score >= 1;
 }
+
+/* ═══════════════════  pedido explícito de humano  ══════════════════════ */
+
+/**
+ * "Quero falar com um atendente" NÃO é pedido de reembolso — e o contador de
+ * exigências não o via. Sem este detector, o cliente que só quer uma pessoa
+ * ficava preso num loop de retenção até desistir (ou virar chargeback).
+ *
+ * Conta por MENSAGEM, como as exigências: pedir duas vezes já demonstra que
+ * a primeira resposta da IA não bastou.
+ */
+const HUMAN_REQUEST_PATTERNS: RegExp[] = [
+  // Português
+  /\b(falar|conversar)\s+com\s+(um[a]?\s+)?(humano|atendente|pessoa|gerente|supervisor|algu[ée]m\s+de\s+verdade)\b/i,
+  /\b(quero|preciso|me\s+(passa|transfere))\s+(de\s+)?(um[a]?\s+)?(atendente|humano|gerente|supervisor)\b/i,
+  /\batendimento\s+humano\b/i,
+  /\b(chega\s+de|cansei\s+de(sse)?)\s+(rob[ôo]|bot|ia|m[áa]quina)\b/i,
+  /\bvoc[êe]\s+[ée]\s+(um\s+)?(rob[ôo]|bot|ia)\b/i,
+  // English
+  /\b(speak|talk)\s+(to|with)\s+(a\s+)?(human|person|real\s+person|agent|manager|supervisor|someone\s+real)\b/i,
+  /\b(real|actual|live)\s+(person|human|agent)\b/i,
+  /\bhuman\s+(agent|support|being)\b/i,
+  /\bare\s+you\s+a\s+(bot|robot|an?\s+ai)\b/i,
+  /\bstop\s+the\s+bot\b/i,
+  // Español
+  /\bhablar\s+con\s+(un[a]?\s+)?(humano|persona|agente|supervisor)\b/i,
+];
+
+export function isHumanRequest(text: string): boolean {
+  return HUMAN_REQUEST_PATTERNS.some((p) => p.test(text));
+}
+
+/** Em quantas mensagens o cliente pediu um humano. */
+export function countHumanRequests(messages: ChatMessage[]): number {
+  return messages.filter(
+    (m) => m.role === "user" && isHumanRequest(m.content),
+  ).length;
+}

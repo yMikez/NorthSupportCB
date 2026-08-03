@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { ESCALATION_THRESHOLD } from "@/lib/claude";
+import { ESCALATION_THRESHOLD, escalationGateOpen } from "@/lib/claude";
 import { markConversationOutcome } from "@/lib/logging";
 import { escalateToHuman } from "@/lib/refunds";
 import { supportEmail } from "@/lib/mode";
-import { countRefundDemands } from "@/lib/retention";
+import { countRefundDemands, countHumanRequests } from "@/lib/retention";
 import { isValidEmail, normalizeEmail } from "@/lib/email";
 import { pickAgent } from "@/lib/agents";
 import { salvarResumoConversa } from "@/lib/resumo";
@@ -33,10 +33,19 @@ async function checkGate(
     });
     if (rows.length === 0) return { allowed: true, demands: 0 };
 
-    const demands = countRefundDemands(
-      rows.map((r) => ({ role: "user" as const, content: r.content })),
-    );
-    return { allowed: demands >= ESCALATION_THRESHOLD, demands };
+    // A MESMA regra do prompt (exigências, pedidos de humano, conversa
+    // arrastada) — duas regras divergentes fariam o modelo escalar e o
+    // servidor recusar, prendendo o cliente no meio.
+    const msgs = rows.map((r) => ({ role: "user" as const, content: r.content }));
+    const demands = countRefundDemands(msgs);
+    return {
+      allowed: escalationGateOpen({
+        demands,
+        humanRequests: countHumanRequests(msgs),
+        userTurns: msgs.length,
+      }),
+      demands,
+    };
   } catch (err) {
     console.error("[escalate] gate check failed, allowing", err);
     return { allowed: true, demands: 0 };

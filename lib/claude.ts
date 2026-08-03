@@ -31,6 +31,10 @@ export interface SystemPromptContext {
   /** Counted in code, not by the model — see lib/retention.ts. */
   refundDemands?: number;
   hardException?: boolean;
+  /** Em quantas mensagens o cliente pediu um HUMANO — see lib/retention.ts. */
+  humanRequests?: number;
+  /** Quantas mensagens o cliente já mandou nesta conversa. */
+  userTurns?: number;
   /**
    * Bloco pronto com os pedidos do cliente na régua do SendTrace (status,
    * etapa, resumo do último atendimento). Montado em lib/sendtrace.ts.
@@ -40,8 +44,39 @@ export interface SystemPromptContext {
   chargebackRisk?: boolean;
 }
 
-/** Demands required before the agent may hand the conversation to a human. */
-export const ESCALATION_THRESHOLD = 6;
+/**
+ * Os limiares do portão de escalação — os três caminhos "normais" de abrir
+ * (as exceções duras e o risco de chargeback abrem sempre, na hora):
+ *
+ *   1. exigências de reembolso   — 3 (era 6: seis "quero meu dinheiro" antes
+ *      de ceder lia-se como surdez, e surdez vira chargeback e review)
+ *   2. pedidos de HUMANO         — 2 ("quero um atendente" duas vezes é o
+ *      cliente dizendo que a IA não serve para este caso)
+ *   3. conversa arrastada        — 10+ mensagens do cliente com ao menos um
+ *      pedido (de reembolso ou de humano) sem resolução
+ *
+ * Ajustáveis por env sem deploy de código novo.
+ */
+export const ESCALATION_THRESHOLD =
+  Number(process.env.ESCALATION_DEMANDS) || 3;
+export const HUMAN_REQUEST_THRESHOLD =
+  Number(process.env.ESCALATION_HUMAN_REQUESTS) || 2;
+export const LONG_CONVERSATION_TURNS =
+  Number(process.env.ESCALATION_LONG_TURNS) || 10;
+
+/** A regra única do portão — usada no prompt E na revalidação do servidor. */
+export function escalationGateOpen(sinais: {
+  demands: number;
+  humanRequests: number;
+  userTurns: number;
+}): boolean {
+  const { demands, humanRequests, userTurns } = sinais;
+  return (
+    demands >= ESCALATION_THRESHOLD ||
+    humanRequests >= HUMAN_REQUEST_THRESHOLD ||
+    (userTurns >= LONG_CONVERSATION_TURNS && demands + humanRequests >= 1)
+  );
+}
 
 /**
  * The escalation instruction is injected only once the gate is open.
@@ -81,13 +116,18 @@ nothing after it:
   }
 
   if (open) {
-    return `## You may now hand over
+    return `## Hand over NOW — the limit has been reached
 
-The customer has asked enough times. Further resistance turns this into a
-chargeback and a public review, which costs us more than the sale. Acknowledge
-their decision without arguing again, tell them a colleague is taking over
-personally, and end the message with this JSON on a new line and nothing
-after it:
+The customer has asked enough times, asked for a human, or this conversation
+has gone on too long without resolution. Further resistance turns this into a
+chargeback and a public review, which costs us more than the sale. Do NOT run
+another retention step, do not ask another probing question, do not offer
+another alternative.
+
+Your next message must: acknowledge their decision in one warm sentence
+(no arguing), say a colleague is taking this over personally and that the
+contact details will appear on screen right away — then end the message with
+this JSON on a new line and nothing after it:
   {"action":"escalate_to_human","order":"{ORDER_ID}"}`;
   }
 
@@ -181,7 +221,11 @@ export function buildContextBlock(ctx: SystemPromptContext): string {
   const demands = ctx.refundDemands ?? 0;
   const urgent = ctx.hardException === true;
   const risco = ctx.chargebackRisk === true;
-  const gateOpen = urgent || risco || demands >= ESCALATION_THRESHOLD;
+  const gateOpen = urgent || risco || escalationGateOpen({
+    demands,
+    humanRequests: ctx.humanRequests ?? 0,
+    userTurns: ctx.userTurns ?? 0,
+  });
 
   return (
     "# Conversation context\n\n" +
