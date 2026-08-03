@@ -23,6 +23,7 @@ import {
   gravarResumoChat,
   gravarResumoParcial,
   gravarPerguntasSemResposta,
+  listarMotivosExistentes,
 } from "./sendtrace";
 import { isValidEmail } from "./email";
 import { isChargebackRisk } from "./retention";
@@ -30,7 +31,16 @@ import { isChargebackRisk } from "./retention";
 const MAX_MENSAGENS = 30;
 const MAX_POR_MENSAGEM = 400;
 
-/** O vocabulário de motivos que o dashboard agrupa — mesma lista da API. */
+/**
+ * Os motivos CANÔNICOS — a semente do vocabulário, não o teto dele.
+ *
+ * O vocabulário é ABERTO: quando o assunto não é nenhum destes, a IA cria um
+ * nome novo (curto, em slug) em vez de despejar tudo em "outro". Para
+ * assuntos similares não virarem dez grafias do mesmo motivo, o classificador
+ * recebe a lista dos motivos JÁ EXISTENTES no banco e reutiliza o nome quando
+ * o assunto é o mesmo ou muito próximo — só o realmente diferente ganha linha
+ * própria no dashboard.
+ */
 const MOTIVOS = [
   "rastreamento",
   "reembolso",
@@ -42,9 +52,31 @@ const MOTIVOS = [
   "outro",
 ] as const;
 
+/**
+ * Normaliza o que a IA devolver para slug: minúsculas, sem acento, underscore.
+ * "Brinde não recebido" e "brinde_nao_recebido" precisam ser a MESMA linha.
+ */
+function slugMotivo(bruto: string | null | undefined): string | null {
+  const slug = String(bruto ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 60);
+  return slug || null;
+}
+
 /** Mesma regra do staleCloser: o cliente falou em reembolso nesta conversa? */
 const REFUND_KEYWORDS =
   /\b(refund|reembolso|estorno|chargeback|money back|devolu[cç][aã]o|dinheiro de volta|reembols)\b/i;
+
+/**
+ * Pedido de CANCELAMENTO conta como pedido de saída, igual ao de reembolso:
+ * para o refund save rate, "cancela minha assinatura" e "quero meu dinheiro"
+ * são o mesmo evento — o cliente indo embora — e reverter os dois é save.
+ */
+const CANCEL_KEYWORDS = /\b(cancel\w*|cancelar\w*|cancelamento)\b/i;
 
 /**
  * Classificador DETERMINÍSTICO de motivo — a rede de segurança do Claude.
@@ -86,7 +118,7 @@ function classificarMotivoHeuristico(
 
 interface ResumoEstruturado {
   resumo: string;
-  motivo: (typeof MOTIVOS)[number] | null;
+  motivo: string | null;
   perguntas: string[];
 }
 
@@ -94,9 +126,14 @@ interface ResumoEstruturado {
  * Uma chamada só faz as três coisas: resume, classifica o motivo e lista as
  * perguntas que ficaram sem resposta. JSON estrito para o parse não depender
  * de boa vontade; se vier torto, o texto inteiro ainda serve de resumo.
+ *
+ * `motivosExistentes` é o vocabulário vivo do banco: assunto igual ou muito
+ * próximo de um deles REUTILIZA aquele nome exato (mescla na mesma linha do
+ * dashboard); só assunto realmente diferente ganha nome novo.
  */
 async function resumirComClaude(
   transcricao: string,
+  motivosExistentes: string[],
 ): Promise<ResumoEstruturado | null> {
   try {
     const client = getAnthropicClient();
@@ -110,13 +147,19 @@ async function resumirComClaude(
         "resumo: em português, até 4 frases — motivo do contato, humor do " +
         "cliente, o que foi tentado e o desfecho; inclua o que ajudar o próximo " +
         "atendente (produto, promessas feitas, sinais de risco de chargeback). " +
-        `motivo: exatamente um de ${MOTIVOS.join(", ")} — decida pela PRIMEIRA ` +
-        "mensagem do cliente (é o que o trouxe ao chat), ajustando pelo rumo do " +
-        "resto da conversa; se ele começou perguntando do rastreio e só pediu " +
-        "reembolso depois que soube do atraso, o motivo é rastreamento, não " +
-        "reembolso. perguntas_sem_resposta: as perguntas do cliente que o " +
-        "agente NÃO conseguiu responder de fato (na língua original, curtas); " +
-        "lista vazia se não houver.",
+        "motivo: decida pela PRIMEIRA mensagem do cliente (é o que o trouxe ao " +
+        "chat), ajustando pelo rumo do resto da conversa; se ele começou " +
+        "perguntando do rastreio e só pediu reembolso depois que soube do " +
+        "atraso, o motivo é rastreamento, não reembolso. Se o assunto for o " +
+        "MESMO ou muito próximo de um destes motivos já registrados, use " +
+        `EXATAMENTE aquele nome: ${motivosExistentes.join(", ")}. Só quando o ` +
+        "assunto for realmente diferente de todos, crie um nome NOVO que o " +
+        "descreva: curto (2 a 4 palavras), em português, minúsculas com " +
+        'underscore (ex.: "brinde_nao_recebido", "desconto_nao_aplicado"). ' +
+        'Evite "outro" — ele esconde o assunto. ' +
+        "perguntas_sem_resposta: as perguntas do cliente que o agente NÃO " +
+        "conseguiu responder de fato (na língua original, curtas); lista " +
+        "vazia se não houver.",
       messages: [{ role: "user", content: transcricao }],
     });
     const bloco = resposta.content.find((b) => b.type === "text");
@@ -129,12 +172,9 @@ async function resumirComClaude(
         motivo?: string;
         perguntas_sem_resposta?: unknown;
       };
-      const motivo = MOTIVOS.includes(dados.motivo as (typeof MOTIVOS)[number])
-        ? (dados.motivo as (typeof MOTIVOS)[number])
-        : null;
       return {
         resumo: String(dados.resumo ?? "").trim() || texto,
-        motivo,
+        motivo: slugMotivo(dados.motivo),
         perguntas: Array.isArray(dados.perguntas_sem_resposta)
           ? dados.perguntas_sem_resposta.map((p) => String(p)).filter(Boolean)
           : [],
@@ -194,6 +234,10 @@ export async function salvarResumoConversa(
     const houveIntencaoReembolso = doCliente.some((m) =>
       REFUND_KEYWORDS.test(m.content),
     );
+    // Reembolso E cancelamento são o mesmo evento para o save rate: o
+    // cliente indo embora. Reverter qualquer um dos dois é save.
+    const houveIntencaoSaida = houveIntencaoReembolso
+      || doCliente.some((m) => CANCEL_KEYWORDS.test(m.content));
 
     // A primeira mensagem do cliente vai DESTACADA no topo: é a âncora da
     // classificação de motivo — sem o destaque, o modelo pesa igualmente o
@@ -216,13 +260,23 @@ export async function salvarResumoConversa(
     const motivoHeuristico = classificarMotivoHeuristico(doCliente)
       ?? (houveIntencaoReembolso ? "reembolso" : "outro");
 
+    // O vocabulário vivo: os motivos já registrados (por volume) mais os
+    // canônicos que ainda não apareceram. É contra esta lista que a IA decide
+    // "mesmo assunto → mesmo nome" ou "assunto novo → nome novo".
+    const vocabulario = [
+      ...new Set([
+        ...(await listarMotivosExistentes().catch(() => [])),
+        ...MOTIVOS.filter((m) => m !== "outro"),
+      ]),
+    ];
+
     const estruturado: ResumoEstruturado = isMockAI()
       ? {
           resumo: `Conversa com ${mensagens.length} mensagens${conversa.productTitle ? ` sobre ${conversa.productTitle}` : ""}.`,
           motivo: motivoHeuristico,
           perguntas: [],
         }
-      : ((await resumirComClaude(transcricao)) ?? {
+      : ((await resumirComClaude(transcricao, vocabulario)) ?? {
           resumo: `Conversa com ${mensagens.length} mensagens${conversa.productTitle ? ` sobre ${conversa.productTitle}` : ""}.`,
           motivo: motivoHeuristico,
           perguntas: [],
@@ -266,10 +320,15 @@ export async function salvarResumoConversa(
         : outcome === "escalated"
           ? false
           : null;
+    // "Pediu para sair" = falou em reembolso OU cancelamento, o desfecho foi
+    // de reembolso, ou o motivo classificado é um dos dois. Tudo isso conta
+    // no denominador do refund save rate.
     const reembolsoPedido =
-      houveIntencaoReembolso ||
+      houveIntencaoSaida ||
       outcome === "refund_issued" ||
-      outcome === "refund_abandoned";
+      outcome === "refund_abandoned" ||
+      estruturado.motivo === "reembolso" ||
+      estruturado.motivo === "cancelamento";
     const reembolsoEvitado = reembolsoPedido
       ? outcome === "resolved" || outcome === "refund_abandoned"
       : null;
@@ -290,6 +349,9 @@ export async function salvarResumoConversa(
         reembolsoPedido,
         reembolsoEvitado,
         duracaoS,
+        // Quando a conversa COMEÇOU — o filtro de tempo da dash recorta por
+        // isto, não pela hora em que o registro foi gravado.
+        iniciadoEm: conversa.startedAt,
       },
     );
 

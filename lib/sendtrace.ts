@@ -249,6 +249,8 @@ export async function gravarResumoChat(
     reembolsoPedido?: boolean;
     reembolsoEvitado?: boolean | null;
     duracaoS?: number | null;
+    /** Quando a conversa COMEÇOU — é por isto que o dashboard recorta o tempo. */
+    iniciadoEm?: Date | null;
   } = {},
 ): Promise<boolean> {
   const corpo = {
@@ -265,6 +267,7 @@ export async function gravarResumoChat(
     duracao_s: Number.isFinite(extras.duracaoS)
       ? Math.max(0, Math.round(extras.duracaoS as number))
       : null,
+    iniciado_em: extras.iniciadoEm ? extras.iniciadoEm.toISOString() : null,
   };
   if (!corpo.transacao_id && !corpo.email) return false;
 
@@ -293,6 +296,31 @@ export async function gravarResumoChat(
     }
   }
   return false;
+}
+
+/**
+ * O vocabulário VIVO de motivos — os assuntos já registrados, do mais comum
+ * ao mais raro. O classificador o recebe para REUTILIZAR nomes: assunto igual
+ * ou próximo de um existente cai na mesma linha do dashboard; só assunto
+ * realmente diferente ganha nome novo. Cache curto: uma chamada por minuto
+ * para o app inteiro.
+ */
+let motivosCache: { dados: string[]; em: number } | null = null;
+const MOTIVOS_CACHE_MS = 60 * 1000;
+
+export async function listarMotivosExistentes(): Promise<string[]> {
+  if (motivosCache && Date.now() - motivosCache.em < MOTIVOS_CACHE_MS) {
+    return motivosCache.dados;
+  }
+  const r = await chamar<{ motivo?: string }[]>(
+    "GET",
+    "/api/atendimentos/motivos/?limite=60",
+  );
+  const dados = Array.isArray(r)
+    ? r.map((x) => String(x.motivo ?? "")).filter(Boolean)
+    : [];
+  if (r) motivosCache = { dados, em: Date.now() };
+  return dados;
 }
 
 /**

@@ -3,8 +3,10 @@ import { salvarResumoConversa } from "./resumo";
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const STALE_THRESHOLD_MS = 30 * 60 * 1000;
+// Cancelamento conta como intenção de saída, igual ao reembolso: quem sumiu
+// depois de pedir para cancelar é um save por abandono, como no save rate.
 const REFUND_KEYWORDS =
-  /\b(refund|reembolso|estorno|chargeback|money back|devolu[cç][aã]o|dinheiro de volta|reembols)\b/i;
+  /\b(refund|reembolso|estorno|chargeback|money back|devolu[cç][aã]o|dinheiro de volta|reembols|cancel\w*|cancelar\w*|cancelamento)\b/i;
 
 let started = false;
 
