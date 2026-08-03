@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { devDetail, getAdapter, isPlatformId } from "@/lib/platforms";
 import { markConversationOutcome } from "@/lib/logging";
 import { processRefund } from "@/lib/refunds";
+import { salvarResumoConversa } from "@/lib/resumo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +40,12 @@ export async function POST(req: Request) {
     // queued request for a human. See lib/refunds.ts.
     const outcome = await processRefund(order, { conversationId });
     await markConversationOutcome(orderId, "refund_issued", platform);
+
+    // O dashboard conta reembolsos emitidos como conversas que a IA fechou
+    // sozinha (sem save). Fire-and-forget — o cliente não espera por isto.
+    salvarResumoConversa(orderId, "reembolso emitido pela IA").catch((e) =>
+      console.warn("[create-refund] resumo não gravado", e),
+    );
 
     return NextResponse.json({ ok: true, mode: outcome.mode });
   } catch (err) {

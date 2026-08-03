@@ -240,7 +240,16 @@ export async function buscarAtendimentos(
 export async function gravarResumoChat(
   chave: ChaveAtendimento,
   resumo: string,
-  extras: { desfecho?: string; riscoChargeback?: boolean } = {},
+  extras: {
+    desfecho?: string;
+    riscoChargeback?: boolean;
+    /** O que o dashboard do suporte conta — ver os campos em Atendimento na API. */
+    motivo?: string | null;
+    resolvido?: boolean | null;
+    reembolsoPedido?: boolean;
+    reembolsoEvitado?: boolean | null;
+    duracaoS?: number | null;
+  } = {},
 ): Promise<boolean> {
   const corpo = {
     transacao_id: chave.transacaoId?.trim() || null,
@@ -248,6 +257,14 @@ export async function gravarResumoChat(
     resumo: resumo.slice(0, 9_000),
     desfecho: extras.desfecho ?? null,
     risco_chargeback: extras.riscoChargeback === true,
+    motivo: extras.motivo ?? null,
+    resolvido: typeof extras.resolvido === "boolean" ? extras.resolvido : null,
+    reembolso_pedido: extras.reembolsoPedido === true,
+    reembolso_evitado:
+      typeof extras.reembolsoEvitado === "boolean" ? extras.reembolsoEvitado : null,
+    duracao_s: Number.isFinite(extras.duracaoS)
+      ? Math.max(0, Math.round(extras.duracaoS as number))
+      : null,
   };
   if (!corpo.transacao_id && !corpo.email) return false;
 
@@ -276,6 +293,54 @@ export async function gravarResumoChat(
     }
   }
   return false;
+}
+
+/**
+ * As perguntas que a IA NÃO soube responder nesta conversa — vão para o
+ * backlog da base de conhecimento no SendTrace, uma linha por ocorrência.
+ * Fail-soft como tudo aqui: perder o registro é uma pena, nunca um erro.
+ */
+export async function gravarPerguntasSemResposta(
+  chave: ChaveAtendimento,
+  perguntas: string[],
+  produto?: string | null,
+): Promise<boolean> {
+  const lote = perguntas
+    .map((p) => String(p ?? "").trim().slice(0, 500))
+    .filter(Boolean)
+    .slice(0, 20);
+  if (!lote.length) return false;
+
+  const r = await chamar<{ gravadas?: number }>("POST", "/api/perguntas-sem-resposta/", {
+    perguntas: lote,
+    transacao_id: chave.transacaoId?.trim() || undefined,
+    email: chave.email?.trim() || undefined,
+    produto: produto?.trim() || undefined,
+  });
+  if (r?.gravadas) {
+    console.log(`[sendtrace] ${r.gravadas} pergunta(s) sem resposta registradas`);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * A nota de satisfação (1–5 estrelas) que o cliente dá DEPOIS do
+ * encerramento. A API grava no atendimento mais recente (24h) do pedido —
+ * o bot não precisa guardar id nenhum.
+ */
+export async function gravarCsat(
+  chave: ChaveAtendimento,
+  nota: number,
+): Promise<boolean> {
+  if (!Number.isInteger(nota) || nota < 1 || nota > 5) return false;
+  const corpo: Record<string, unknown> = { csat: nota };
+  if (chave.transacaoId?.trim()) corpo.transacao_id = chave.transacaoId.trim();
+  if (chave.email?.trim()) corpo.email = chave.email.trim().toLowerCase();
+  if (!corpo.transacao_id && !corpo.email) return false;
+
+  const r = await chamar<{ id?: number }>("POST", "/api/atendimentos/csat/", corpo);
+  return Boolean(r?.id);
 }
 
 /**

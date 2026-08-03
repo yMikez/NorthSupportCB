@@ -168,6 +168,8 @@ export default function CustomerPage() {
     "escalated" | "refund" | "resolved" | null
   >(null);
   const [caseReference, setCaseReference] = useState<string>("");
+  /** A nota (1–5 estrelas) dada na tela final. Vira o CSAT do dashboard. */
+  const [csat, setCsat] = useState<number | null>(null);
   const [handover, setHandover] = useState<Handover | null>(null);
   const [offerClose, setOfferClose] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
@@ -292,6 +294,25 @@ export default function CustomerPage() {
       setGlobalError("Network error while handing this over.");
     } finally {
       setSubmittingRefund(false);
+    }
+  }
+
+  /**
+   * A avaliação é cortesia, nunca obrigação: falhar em silêncio é o
+   * comportamento certo — uma tela de erro por causa de uma estrela seria
+   * pior que não ter estrela. Clicar de novo sobrescreve (a API grava a
+   * última nota no atendimento mais recente).
+   */
+  async function sendCsat(rating: number) {
+    setCsat(rating);
+    try {
+      await fetch("/api/csat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caseKey, email, rating }),
+      });
+    } catch {
+      /* fire-and-forget */
     }
   }
 
@@ -758,6 +779,42 @@ export default function CustomerPage() {
                   ? "Thanks for chatting with us — we hope everything goes great from here."
                   : "Thanks for your patience — here's what happens next."}
               </p>
+
+              {/* CSAT: cinco estrelas, opcional. A nota vai para o atendimento
+                  recém-gravado no SendTrace e vira a média do dashboard. */}
+              <div className="mt-5">
+                <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                  How was your experience today?
+                </p>
+                <div
+                  className="mt-2 flex items-center justify-center gap-1"
+                  role="radiogroup"
+                  aria-label="Rate your experience from 1 to 5 stars"
+                >
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      role="radio"
+                      aria-checked={csat === star}
+                      aria-label={`${star} star${star === 1 ? "" : "s"}`}
+                      onClick={() => void sendCsat(star)}
+                      className={`text-3xl leading-none transition-transform hover:scale-110 ${
+                        csat !== null && star <= csat
+                          ? "text-amber-400"
+                          : "text-neutral-300 hover:text-amber-300"
+                      }`}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+                {csat !== null && (
+                  <p className="mt-2 text-xs text-neutral-500">
+                    Thanks for your feedback!
+                  </p>
+                )}
+              </div>
 
               {endReason !== "resolved" && caseReference && (
                 <div className="mt-5 flex justify-center">

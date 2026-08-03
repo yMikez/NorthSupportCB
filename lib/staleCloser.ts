@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { salvarResumoConversa } from "./resumo";
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const STALE_THRESHOLD_MS = 30 * 60 * 1000;
@@ -49,6 +50,17 @@ async function closeStaleConversations(): Promise<void> {
         where: { id: conv.id },
         data: { outcome, endedAt: new Date() },
       });
+
+      // Sem este registro, conversas abandonadas nunca chegariam ao
+      // dashboard — e são justamente elas que carregam os reembolsos
+      // evitados por abandono. Fire-and-forget: fechar não pode falhar
+      // porque o SendTrace piscou.
+      salvarResumoConversa(
+        conv.orderId,
+        hadRefundIntent
+          ? "abandonada com pedido de reembolso (cliente não concluiu)"
+          : "encerrada por inatividade",
+      ).catch((e) => console.warn("[staleCloser] resumo não gravado", e));
     }
 
     console.log(
