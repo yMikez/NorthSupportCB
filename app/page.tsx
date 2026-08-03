@@ -96,20 +96,20 @@ function stripAction(content: string): string {
 function buildSteps(phase: Phase): StepperStep[] {
   if (phase === "identify") {
     return [
-      { label: "Your email", state: "active" },
+      { label: "Your order", state: "active" },
       { label: "Talk to support", state: "upcoming" },
       { label: "Resolved", state: "upcoming" },
     ];
   }
   if (phase === "chat") {
     return [
-      { label: "Your email", state: "complete" },
+      { label: "Your order", state: "complete" },
       { label: "Talk to support", state: "active" },
       { label: "Resolved", state: "upcoming" },
     ];
   }
   return [
-    { label: "Your email", state: "complete" },
+    { label: "Your order", state: "complete" },
     { label: "Talk to support", state: "complete" },
     { label: "Resolved", state: "complete" },
   ];
@@ -135,6 +135,17 @@ export default function CustomerPage() {
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  /**
+   * Como o cliente se identifica. O ID DE TRANSAÇÃO (do recibo) é o caminho
+   * principal: ele amarra a conversa a UM pedido — histórico, produto e o
+   * dashboard inteiro dependem dessa chave. O e-mail continua existindo como
+   * alternativa explícita, porque suporte nunca pode ser beco sem saída para
+   * quem não acha o número.
+   */
+  const [idMode, setIdMode] = useState<"order" | "email">("order");
+  const [orderInput, setOrderInput] = useState("");
+  const [orderError, setOrderError] = useState("");
 
   /**
    * What every downstream call keys on: the resolved order number when the
@@ -183,37 +194,59 @@ export default function CustomerPage() {
     });
   }, [messages, phase, sending]);
 
-  async function handleEmailSubmit(e: FormEvent) {
+  async function handleIdentifySubmit(e: FormEvent) {
     e.preventDefault();
     setGlobalError("");
     setGlobalDetail("");
+
+    // O caminho principal: o ID de transação do recibo identifica UM pedido.
+    const trimmedOrder = orderInput.trim();
     const trimmed = email.trim().toLowerCase();
-    if (!EMAIL_RE.test(trimmed)) {
-      setEmailError("Please enter a valid email address.");
-      return;
+
+    if (idMode === "order") {
+      if (trimmedOrder.length < 4) {
+        setOrderError("Please enter the order ID from your receipt (at least 4 characters).");
+        return;
+      }
+      setOrderError("");
+    } else {
+      if (!EMAIL_RE.test(trimmed)) {
+        setEmailError("Please enter a valid email address.");
+        return;
+      }
+      setEmailError("");
     }
-    setEmailError("");
     setLoading(true);
 
     try {
-      // One request: the server looks for a purchase made with this address.
-      // Not finding one is fine — support still opens, just without an order
-      // attached.
+      // One request. By order id it resolves THE order; by email it looks for
+      // a purchase made with the address. Not finding one by email is fine —
+      // support still opens, just without an order attached.
       const res = await fetch("/api/lookup-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmed }),
+        body: JSON.stringify(
+          idMode === "order" ? { orderId: trimmedOrder } : { email: trimmed },
+        ),
       });
       const data = await res.json();
 
       if (!res.ok || !data.found) {
-        setGlobalError(data.error ?? "We couldn't start your request.");
+        // Um número que não casou não encerra o caminho: a própria mensagem
+        // aponta a alternativa por e-mail, que continua a um clique.
+        if (idMode === "order") {
+          setOrderError(data.error ?? "We couldn't find that order.");
+        } else {
+          setGlobalError(data.error ?? "We couldn't start your request.");
+        }
         if (data.detail) setGlobalDetail(data.detail);
         return;
       }
 
-      setEmail(trimmed);
-      setCaseKey(data.caseKey ?? trimmed);
+      // No caminho por transação o e-mail vem DO PEDIDO — é ele que o resto
+      // do fluxo (escalação, avaliação) usa.
+      setEmail(data.email ?? (idMode === "email" ? trimmed : ""));
+      setCaseKey(data.caseKey ?? (idMode === "order" ? trimmedOrder : trimmed));
       setOrderNumber(data.orderId ?? null);
       setPlatform(data.platform ?? "");
       setRefundAmount(data.refundAmount ?? 0);
@@ -509,32 +542,80 @@ export default function CustomerPage() {
                 Let&rsquo;s sort this out for you
               </h1>
               <p className="mt-2 text-sm text-neutral-500">
-                Enter the email address you used at checkout. We&rsquo;ll pull
-                up your details and take it from there.
+                {idMode === "order"
+                  ? "Enter the order ID from your receipt. It ties this chat to the right purchase from the start."
+                  : "Enter the email address you used at checkout. We'll look for your purchase and take it from there."}
               </p>
 
-              <form onSubmit={handleEmailSubmit} className="mt-7 space-y-5">
-                <Input
-                  theme="light"
-                  type="email"
-                  inputMode="email"
-                  label="Email address"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    if (emailError) setEmailError("");
-                  }}
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                  autoFocus
-                  error={emailError || undefined}
-                  hint="Don't worry if you used a different address — we can still help."
-                />
+              <form onSubmit={handleIdentifySubmit} className="mt-7 space-y-5">
+                {idMode === "order" ? (
+                  <Input
+                    theme="light"
+                    type="text"
+                    label="Order ID"
+                    value={orderInput}
+                    onChange={(e) => {
+                      setOrderInput(e.target.value);
+                      if (orderError) setOrderError("");
+                    }}
+                    placeholder="e.g. 9WXYZ123 (on your receipt email)"
+                    autoComplete="off"
+                    autoFocus
+                    error={orderError || undefined}
+                    hint="It's on the receipt you received right after purchase."
+                  />
+                ) : (
+                  <Input
+                    theme="light"
+                    type="email"
+                    inputMode="email"
+                    label="Email address"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (emailError) setEmailError("");
+                    }}
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    autoFocus
+                    error={emailError || undefined}
+                    hint="Don't worry if you used a different address — we can still help."
+                  />
+                )}
 
                 <Button type="submit" size="lg" fullWidth loading={loading}>
                   Get Support <span aria-hidden="true">→</span>
                 </Button>
               </form>
+
+              {/* A alternativa fica sempre a um clique: quem não acha o número
+                  do pedido não pode ficar trancado do lado de fora. */}
+              <p className="mt-4 text-center text-xs text-neutral-500">
+                {idMode === "order" ? (
+                  <>
+                    Can&rsquo;t find your order ID?{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary-700 underline underline-offset-2"
+                      onClick={() => setIdMode("email")}
+                    >
+                      Use your email instead
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    Have your order ID?{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary-700 underline underline-offset-2"
+                      onClick={() => setIdMode("order")}
+                    >
+                      Use it instead
+                    </button>{" "}
+                    — it finds your purchase faster.
+                  </>
+                )}
+              </p>
 
               <div className="mt-7 border-t border-neutral-200 pt-5 animate-fade-up-soft delay-600">
                 <TrustBadges />

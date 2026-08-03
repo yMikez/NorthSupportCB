@@ -19,9 +19,11 @@ const MAX_LOOKUPS_PER_HOUR = 30;
 /**
  * Where the flow starts.
  *
- * The customer types their **email address**; we look for a mirrored purchase
- * made with it and, when there is one, carry the order through the rest of the
- * flow. An email with nothing behind it is *not* a dead end — support must
+ * The customer identifies by **order ID** (the transaction id on their
+ * receipt) — it resolves to exactly ONE purchase, and everything downstream
+ * (conversation, support history, the dashboard) keys on it. The **email
+ * address** remains as the explicit fallback for whoever can't find the
+ * number: an email with nothing behind it is *not* a dead end — support must
  * never turn away someone who bought under a different address or whose
  * purchase predates the webhook mirror. They go through to the chat with no
  * order attached and the agent asks what they need.
@@ -33,9 +35,6 @@ const MAX_LOOKUPS_PER_HOUR = 30;
  * Having been here before is never a reason to refuse someone: a customer
  * refunded last month may have a new problem today, so every lookup opens a
  * fresh conversation.
- *
- * An `orderId` body is still accepted so an operator can look a case up the old
- * way; the customer-facing UI no longer sends one.
  */
 export async function POST(req: Request) {
   const ip = getClientIp(req);
@@ -51,7 +50,9 @@ export async function POST(req: Request) {
   const rawEmail = String(body.email ?? "").trim();
   const rawOrderId = String(body.orderId ?? body.receipt ?? "").trim();
 
-  if (!rawEmail && rawOrderId) {
+  // O id de transação tem precedência quando os dois vierem: ele identifica
+  // UM pedido; o e-mail identifica uma pessoa que pode ter vários.
+  if (rawOrderId) {
     return lookupByOrderId(rawOrderId);
   }
 
@@ -134,7 +135,7 @@ function unmatched(email: string) {
   };
 }
 
-/** Legacy path: an order number, resolved the way it always was. */
+/** O caminho principal: o id de transação resolve exatamente um pedido. */
 async function lookupByOrderId(orderId: string) {
   if (orderId.length < 4) {
     return NextResponse.json(
