@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { markConversationOutcome } from "@/lib/logging";
+import { supportEmail } from "@/lib/mode";
 import { salvarResumoConversa } from "@/lib/resumo";
 
 export const runtime = "nodejs";
@@ -30,7 +31,9 @@ export async function POST(req: Request) {
       console.warn("[resolve-conversation] resumo não gravado", e),
     );
 
-    return NextResponse.json({ ok: true });
+    // A tela de encerramento mostra o e-mail de suporte também no caminho
+    // "resolvido": ticket fechado não pode significar porta fechada.
+    return NextResponse.json({ ok: true, supportEmail: supportEmail() });
   } catch (err) {
     console.error("[resolve-conversation]", err);
     return NextResponse.json(

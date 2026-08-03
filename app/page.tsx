@@ -184,6 +184,8 @@ export default function CustomerPage() {
   const [handover, setHandover] = useState<Handover | null>(null);
   const [offerClose, setOfferClose] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
+  /** O e-mail de suporte na tela final do caminho "resolvido". */
+  const [supportContact, setSupportContact] = useState<string>("");
 
   const scrollerRef = useRef<HTMLDivElement>(null);
 
@@ -351,11 +353,13 @@ export default function CustomerPage() {
 
   async function triggerResolve(keyToResolve: string) {
     try {
-      await fetch("/api/resolve-conversation", {
+      const res = await fetch("/api/resolve-conversation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ caseKey: keyToResolve, platform }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (data.supportEmail) setSupportContact(String(data.supportEmail));
     } catch {
       /* non-blocking — UI still closes the conversation */
     }
@@ -518,6 +522,8 @@ export default function CustomerPage() {
     setHandover(null);
     setOfferClose(null);
     setClosing(false);
+    setSupportContact("");
+    setCsat(null);
   }
 
   async function confirmCloseTicket() {
@@ -786,7 +792,8 @@ export default function CustomerPage() {
                 <div className="border-t border-emerald-100 bg-emerald-50 px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-xs text-emerald-800">
-                      Tudo resolvido? Encerre o atendimento quando quiser.
+                      All set? This <b>closes your support ticket</b> — you can
+                      rate the chat right after.
                     </p>
                     <button
                       type="button"
@@ -878,7 +885,7 @@ export default function CustomerPage() {
               </h1>
               <p className="mt-2 text-sm text-neutral-500">
                 {endReason === "resolved"
-                  ? "Thanks for chatting with us — we hope everything goes great from here."
+                  ? "Your support ticket is now closed. Rate the conversation below — and if anything comes up, our email is right here."
                   : "A human colleague is taking over from here. Rate this chat below, and use the email button to reach them directly."}
               </p>
 
@@ -917,6 +924,21 @@ export default function CustomerPage() {
                   </p>
                 )}
               </div>
+
+              {/* Ticket fechado não é porta fechada: no caminho "resolvido"
+                  o e-mail de suporte fica visível também. */}
+              {endReason === "resolved" && supportContact && (
+                <p className="mt-6 border-t border-neutral-200 pt-5 text-xs text-neutral-500">
+                  Need anything else? Email us anytime at{" "}
+                  <a
+                    href={`mailto:${supportContact}`}
+                    className="font-medium text-primary-700 underline underline-offset-2"
+                  >
+                    {supportContact}
+                  </a>
+                  .
+                </p>
+              )}
 
               {endReason !== "resolved" && caseReference && (
                 <div className="mt-5 flex justify-center">
